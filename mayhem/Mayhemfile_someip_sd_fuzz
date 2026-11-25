@@ -1,0 +1,9 @@
+project: savantenvs/as
+target: someip_sd_fuzz
+cmds:
+  - cmd: /mayhem/someip_sd_fuzz
+    libfuzzer: true
+    timeout: 5
+testsuite:
+  - https://$MAYHEM_DOMAIN/$MAYHEM_PROJECT/$MAYHEM_TARGET/testsuite.tar
+  - file://mayhem/someip_sd_fuzz/testsuite

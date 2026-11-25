@@ -1,0 +1,9 @@
+project: savantenvs/as
+target: srec_fuzz
+cmds:
+  - cmd: /mayhem/srec_fuzz
+    libfuzzer: true
+    timeout: 5
+testsuite:
+  - https://$MAYHEM_DOMAIN/$MAYHEM_PROJECT/$MAYHEM_TARGET/testsuite.tar
+  - file://mayhem/srec_fuzz/testsuite

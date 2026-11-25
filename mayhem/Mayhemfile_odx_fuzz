@@ -1,0 +1,9 @@
+project: savantenvs/as
+target: odx_fuzz
+cmds:
+  - cmd: /mayhem/odx_fuzz
+    libfuzzer: true
+    timeout: 5
+testsuite:
+  - https://$MAYHEM_DOMAIN/$MAYHEM_PROJECT/$MAYHEM_TARGET/testsuite.tar
+  - file://mayhem/odx_fuzz/testsuite

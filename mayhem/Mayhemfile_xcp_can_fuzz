@@ -1,0 +1,9 @@
+project: savantenvs/as
+target: xcp_can_fuzz
+cmds:
+  - cmd: /mayhem/xcp_can_fuzz
+    libfuzzer: true
+    timeout: 5
+testsuite:
+  - https://$MAYHEM_DOMAIN/$MAYHEM_PROJECT/$MAYHEM_TARGET/testsuite.tar
+  - file://mayhem/xcp_can_fuzz/testsuite

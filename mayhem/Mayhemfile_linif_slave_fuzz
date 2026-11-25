@@ -1,0 +1,9 @@
+project: savantenvs/as
+target: linif_slave_fuzz
+cmds:
+  - cmd: /mayhem/linif_slave_fuzz
+    libfuzzer: true
+    timeout: 5
+testsuite:
+  - https://$MAYHEM_DOMAIN/$MAYHEM_PROJECT/$MAYHEM_TARGET/testsuite.tar
+  - file://mayhem/linif_slave_fuzz/testsuite

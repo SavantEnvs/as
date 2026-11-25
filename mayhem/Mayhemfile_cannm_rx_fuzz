@@ -1,0 +1,9 @@
+project: savantenvs/as
+target: cannm_rx_fuzz
+cmds:
+  - cmd: /mayhem/cannm_rx_fuzz
+    libfuzzer: true
+    timeout: 5
+testsuite:
+  - https://$MAYHEM_DOMAIN/$MAYHEM_PROJECT/$MAYHEM_TARGET/testsuite.tar
+  - file://mayhem/cannm_rx_fuzz/testsuite
