@@ -185,10 +185,13 @@ CanTSyn_CalcGlobalTimestamp(StbM_TimeStampType *timestamp, uint32_t st0r /* seco
   if (E_OK == ret) {
     timestamp->seconds = diff / CANTSYN_NANOSECONDS_PER_SECOND;
     diff = diff - timestamp->seconds * CANTSYN_NANOSECONDS_PER_SECOND;
-    timestamp->seconds += ovs;
 
     seconds = t4r / CANTSYN_NANOSECONDS_PER_SECOND;
     timestamp->nanoseconds = t4r - seconds * CANTSYN_NANOSECONDS_PER_SECOND + diff;
+    if (timestamp->nanoseconds >= CANTSYN_NANOSECONDS_PER_SECOND) {
+      timestamp->nanoseconds -= CANTSYN_NANOSECONDS_PER_SECOND;
+      timestamp->seconds += 1u;
+    }
 
     timestamp->seconds += ovs + seconds;
     timestamp->secondsHi = 0;

@@ -30,7 +30,6 @@ comments: true
 6. [Build and run a demo](#6-build-and-run-a-demo)
 7. [Key notes and gotchas](#7-key-notes-and-gotchas)
 8. [Troubleshooting](#8-troubleshooting)
-9. [Known limitations](#9-known-limitations)
 
 ---
 
@@ -335,34 +334,6 @@ the [Com SWC demo](../../app/app/config/SWC).
 | Tx stops after tester present | Dcm 0x28 disabled communication and nobody re-enabled | `Com_DcmCommunicationControl` calls in Dcm.c |
 
 ---
-
-## 9. Known limitations
-
-Code review findings verified against `infras/communication/Com/Com.c` and
-`tools/generator/Com.py`:
-
-1. **Four declared APIs are not implemented**: `Com_InvalidateSignal`,
-   `Com_InvalidateSignalGroup`, `Com_SwitchIpduTxMode`, `Com_GetStatus` exist
-   only in `Com.h` - using them is a link error.
-2. **`DataInvalidAction` is dead configuration**: emitted as `COM_ACTION_*`
-   into the signal table, never read by `Com.c` (the only actions evaluated are
-   the Rx-timeout ones). Same for `InvalidNotification`.
-3. **`Device`, `Port`, `Baudrate` in `Com.json` are ignored** by the generator;
-   they look meaningful but the CAN device is configured elsewhere.
-4. **`Com_MainFunctionRx` restarts the timer before acting**: on expiry the
-   timer is reloaded first, so a callback that blocks for several cycles still
-   keeps the nominal period - but a long callback delays all later IPdus in the
-   same loop (single-threaded scan, no per-PDU phase).
-5. **`Com_TriggerIPDUSend` treats a failed transmit as success** (sets
-   `timer = 1` and returns `E_OK`): with `COM_USE_MAIN_FAST` unset the retry
-   happens one cycle later; the caller cannot distinguish "sent" from "queued".
-6. **`Com_CopyRxData` requires `MetaDataPtr`** (offset) unconditionally - only
-   usable behind a TP module that provides offsets (SecOC/CanTp gateway paths).
-7. **Generator: `enable_*` switches only auto-generate names**, they do not
-   validate that the function actually exists - a typo in a callback name still
-   compiles until link time.
-8. **Generator: LIN networks silently drop Tx** (`COM_TX_FOR_*` macro for LIN is
-   generated empty); LIN Tx relies on trigger-transmit via LinIf.
 
 **Related documents:** [PduR](PduR.md) - [CanIf](CanIf.md) - [E2E](E2E.md) -
 [ComM](ComM.md) - [SecOC](SecOC.md) - [Dcm](Dcm.md)

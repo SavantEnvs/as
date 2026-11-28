@@ -30,7 +30,6 @@ comments: true
 6. [构建与运行演示](#6-构建与运行演示)
 7. [关键注意事项](#7-关键注意事项)
 8. [故障排查](#8-故障排查)
-9. [已知局限](#9-已知局限)
 
 ---
 
@@ -300,6 +299,10 @@ flowchart TD
 `CanIf_TxConfirmation(swPduHandle)`，向配置的 `txConfirm` 转发 `E_OK` 并清除
 发送超时定时器。
 
+已在队列里的帧（`CAN_BUSY` 重试）若在 `CanIf_MainFunction_Fast()` 中再次发送
+失败，会被放回 TX 队列头部、下个周期重试 - 不会被丢弃，池槽位只在驱动接受
+该帧后才释放。`CanIf_SetPduMode()` 切到非 `CANIF_ONLINE` 时会清空整个 TX 队列。
+
 ### 4.4 PDU 模式与发送超时
 
 | 模式 | 值 | 本实现中的行为 |
@@ -403,43 +406,6 @@ CANIF   :RX CAN ID=0x00000732 LEN=8 DATA=[10 0D 62 F1 5B ...]
 | 确认回调进了错误的模块 | 把 Rx 宏传给了 `CanIf_Transmit()`（Rx/Tx id 数值重叠） | 使用 `CANIF_*_TX` |
 
 ---
-
-## 9. 已知局限
-
-以下是对 `infras/communication/CanIf/CanIf.c` 的代码审查结论（已对照源码核实，
-按严重程度排序）：
-
-1. **`CanIf_GetPduMode()` 的 DET 条件写反了**（`CanIf.c:349`）：
-   `DET_VALIDATE(NULL == PduModePtr, ...)`。开 `USE_DET` 时每一次**合法**调用都会
-   上报 `CANIF_E_PARAM_POINTER` 并返回 `E_NOT_OK`，传 `NULL` 反而会解引用。应改为
-   `NULL != PduModePtr`。
-2. **TX 队列的排水代码套在 RX 池的宏里**（`CanIf.c:501`）：该循环的守卫是
-   `#if CANIF_RX_PACKET_POOL_SIZE > 0`，而变量声明在
-   `CANIF_TX_PACKET_POOL_SIZE > 0` 之下。后果有二：Rx 池 > 0 且 Tx 池 == 0 时
-   编不过；Tx 池 > 0 且 Rx 池 == 0 时能编过但入队的 PDU 永远发不出去，而
-   `CanIf_Transmit()` 仍返回 `E_OK`（静默丢帧）。
-3. **`CanIf_SetTrcvMode()` / `CanIf_GetTrcvMode()` 实现在 CAN 驱动里**
-   （`infras/mcal/Can/Can.c:123` 与 `:161`），不在 CanIf 中。DET 错误按
-   `MODULE_ID_CAN` 上报；定义 `USE_THIRD_PARTY_CAN` 时 Can.c 不参与编译，这两个
-   函数随之消失，任何调用方都会在链接期失败。
-4. **`UseTxPool` / `E2E` 列表运行时无效果。** `bUseTxPool` 字段生成了、存下了，
-   但从未被读取；`CanIf_Transmit()` 遇到 `CAN_BUSY` 时不看该标志一律入队。
-   结合第 2 条，队列甚至可能根本不会被排水。
-5. **入队 PDU 丢失各自的 CAN ID。** `CanIf_MainFunction_Fast()` 排水时传
-   `MetaDataPtr = NULL`，`Dynamic` PDU 会按 `canidOf<NAME>` 的**当前值**发送，
-   而不是入队时的值。对 ID 依赖 `NodeId` 的 NM 报文，可能以过期 ID 上总线。
-6. **帧日志无条件读 8 字节**（`CanIf.c:85-88`）：2 字节的帧会越界读 6 字节。
-   宿主上无碍，目标机上可能是硬错误；仅在 `AS_LOG_CANIF` 打开时触发。
-7. **`CANIF_TX_OFFLINE_ACTIVE` 未实现**：`CanIf_SetPduMode()` 接受它，但发送
-   路径只认 `CANIF_ONLINE`，AUTOSAR 语义（"允许发送、禁止接收"）没有兑现。
-8. **生成器 HOH 范围检查差一**（`CanIf.py:257,262`）：`hh > (hrh + NumHrh)`
-   会放行 `hh == hrh + NumHrh`，即越过一个网络的最后一个 HOH。
-9. **生成器 `E2E` 键名有误导**（`CanIf.py:229`）：它只对导入的 Tx 报文设置
-   `UseTxPool`。真正的 E2E 防护在 `E2E.json` 里配置，不在这里。
-10. **生成器 DBC 导入给所有报文分配同一个 HOH**（`CanIf.py:230-235`，
-    `hoh: hth`/`hrh` 不递增）：一个网络的全部导入报文共享同一个硬件过滤器，
-    这是驱动所期望的，但也意味着导入流量无法使用多个 mailbox，除非手工修改
-    `GEN/CanIf.json`。
 
 **相关文档：** [CanTp](CanTp.md) - [PduR](PduR.md) - [Com](Com.md) -
 [Dcm](Dcm.md) - [SecOC](SecOC.md) - [Mirror](Mirror.md) -

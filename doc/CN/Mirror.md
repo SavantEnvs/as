@@ -32,7 +32,7 @@ comments: true
 6. [构建与运行示例](#6-构建与运行示例)
 7. [关键注意事项](#7-关键注意事项)
 8. [问题排查](#8-问题排查)
-9. [已知限制与代码评审发现](#9-已知限制与代码评审发现)
+9. [已知限制](#9-已知限制)
 10. [相关文档](#10-相关文档)
 
 ---
@@ -145,7 +145,7 @@ LIN 源、CAN 目的、IP 目的（对应宏 `MIRROR_SRC_NT_CAN_*`、`MIRROR_SRC
 ```mermaid
 flowchart TB
     R["Mirror_ReportCanFrame(controllerId, canId, ...)"] --> Map{"controllerId 在<br/>CanCtrlIdToNetworkMaps 中?"}
-    Map -->|"MIRROR_INVALID_NETWORK"| Drop0["丢弃<br/>(无 DET，见第 9 节)"]
+    Map -->|"MIRROR_INVALID_NETWORK"| Drop0["丢弃<br/>(无 DET)"]
     Map -->|network| Active{"目的地激活且<br/>源网络已启动?"}
     Active -->|"否"| Drop1["丢弃（打日志）"]
     Active -->|"是"| F{"任一激活过滤器<br/>命中 canId?"}
@@ -294,9 +294,7 @@ build\nt\GCC\one\CanDump.exe -d simulator_v2 -p 13
 
 ---
 
-## 9. 已知限制与代码评审发现
-
-### 9.1 功能限制
+## 9. 已知限制
 
 * **未实现完整规范的 MirrorOverEthernet 状态机**——模块实现了帧/状态上报与
   两种目的地，但没有端口代理/网络配置对话，没有 PNC 网关协同。
@@ -306,23 +304,6 @@ build\nt\GCC\one\CanDump.exe -d simulator_v2 -p 13
 * **只有 CanIf 与 LinIf 供数**——以太网（EthIf）源未实现。
 * **CAN 目的环形缓冲无溢出统计。**
 * **时间戳只在 IP 路径存在**（主机解码头时间戳）；CAN 目的不带时间信息。
-
-### 9.2 代码评审发现
-
-| # | 位置 | 发现 |
-| --- | --- | --- |
-| 1 | `Mirror.c:1133-1134` | `Mirror_GetNetworkHandle` 查找的是 `MIRROR_CONFIG->ComChannelMaps[network]` 而非 `[i]`——每次迭代都检查同一个（初值为 `MIRROR_INVALID_NETWORK`）元素，因此该函数永远找不到匹配，且首次迭代就越界读 `ComChannelMaps[0xFF]`。变量遮蔽/复制粘贴错误；依赖此 API 的调用方只会得到 `MIRROR_INVALID_NETWORK` 或崩溃。 |
-| 2 | `Mirror.c:1170-1172` | `Mirror_ReportCanFrame` 用 `CanCtrlIdToNetworkMaps` 映射 `controllerId` 后未检查 `MIRROR_INVALID_NETWORK`；未配置为镜像源的 CAN 控制器会得到 `config = &SourceNetworkCans[<超大值>]`（越界指针），而 `bStarted` 检查来不及救场。CanIf 对**系统中每个**控制器都会调用此 API。 |
-| 3 | `Mirror.c:1176-1188` | 过滤循环条件 `i < config->context->MaxActiveFilterId` 加上 `MaxActiveFilterId == 0 -> 全部接受`意味着：添加一个过滤器再停用它**不能**恢复"全部接受"——只有初始状态才全收。`Mirror_RemoveFilter` 会紧凑化 `MaxActiveFilterId`，被删过滤器曾经放行的帧会静默重新出现。 |
-| 4 | `Mirror.c:335-390` | `Mirror_EnqueCanFrame` 先按 `numPackets` 做容量检查再逐包写入；只要 `in - out <= NumOfDataElements` 不变式成立就正确——但容量算式（`0xFFFFul - out + 1u + in`）只在 in/out 差值小于 65536 时成立。uint16 计数器下长期运行成立，但代码缺少注释；任何一处误增都会静默破坏该不变式。 |
-| 5 | `Mirror.c:201-216` | LIN 的 range 与 mask 过滤共用 `Mirror_ValidateLinFilter`，而 CAN 是两条独立路径；LIN mask 语义（对 6 位 PID 做 `code/mask`）与 CAN 有细微差别——很容易配出一个永不命中的 LIN mask。 |
-| 6 | `Mirror.c`（全文 1549 行） | 20 多个 static 函数被不同的 `#ifdef` 组合（`MIRROR_USE_SOURCE_CAN`、`MIRROR_USE_DEST_CAN`、`USE_SOAD`……）门控，树内只有 `test/mirror_test.cpp` 一个测试；多数组合（如 LIN 源 + CAN 目的）只被硬件 demo 覆盖。 |
-| 7 | `Mirror.py:44` | 为 `TxPduId` 生成 `#define MIRROR_%s %su`——`TxPduId: "MIRROR_TX"` 会生成冗余的 `MIRROR_MIRROR_TX`（无害）；但 `TxPduId` 名与网络名撞名时会静默产生重复宏。 |
-| 8 | `Mirror.py:249-251` | CAN 目的的 `DestQueueSize` 被**翻倍**（128 -> 256 槽）并 assert 2 的幂；RAM 按翻倍值分配，但 JSON 里的 `DestQueueSize` 看起来像槽数。IP 目的则用原始值。不一致且无文档。 |
-| 9 | `Mirror.c:293` | `Mirror_SetNetworkLinFilterState` 与 CAN 版本把同样的边界逻辑重复了四次（get/set x CAN/LIN）——离重蹈 `GetNetworkHandle` 覆辙只差一次重构。 |
-| 10 | `Mirror_Test.c` | `Mirror_TestStart` 依赖 `*currentDataLength` 分发命令，但部分命令在只检查部分长度的情况下读取固定偏移（`dataIn[1..3]`）；现有命令没有越界，但新增命令若不同样小心就会读越界。 |
-
----
 
 ## 10. 相关文档
 

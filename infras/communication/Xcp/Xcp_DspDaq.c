@@ -373,10 +373,13 @@ Std_ReturnType Xcp_DspStartStopDAQList(Xcp_MsgContextType *msgContext,
                    ((uint16_t)msgContext->ResData[0] + config->DaqList[i]->MaxOdt)) {
           msgContext->ResData[0] += config->DaqList[i]->MaxOdt;
         } else {
+          ret = E_NOT_OK;
           *nrc = XCP_E_RESOURCE_TEMPORARY_NOT_ACCESSIBLE;
         }
       }
-      msgContext->ResDataLen = 1;
+      if (E_OK == ret) {
+        msgContext->ResDataLen = 1;
+      }
     }
   }
 
@@ -556,10 +559,6 @@ Std_ReturnType Xcp_DspReadDAQ(Xcp_MsgContextType *msgContext, Xcp_NegativeRespon
   Xcp_OdtEntryType *pEntry;
   Xcp_ContextType *context = Xcp_GetContext();
   Xcp_SetDaqPtrContextType *sdpCtx = (Xcp_SetDaqPtrContextType *)context->Cache;
-  uint8_t bitOffset;
-  uint8_t length;
-  uint8_t extension;
-  uint32_t address;
 
   if (XCP_PID_CMD_DAQ_SET_DAQ_PTR != context->CacheOwner) {
     ret = E_NOT_OK;
@@ -568,16 +567,8 @@ Std_ReturnType Xcp_DspReadDAQ(Xcp_MsgContextType *msgContext, Xcp_NegativeRespon
     ret = Xcp_IsTheDaqPtrReadValid(sdpCtx->DaqListNumber, sdpCtx->OdtNumber, sdpCtx->OdtEntryNumber,
                                    nrc);
     if (E_OK == ret) {
-      bitOffset = msgContext->ReqData[0];
-      length = msgContext->ReqData[1];
-      extension = msgContext->ReqData[2];
-      address = Xcp_GetU32(&msgContext->ReqData[3]);
       pDaq = (Xcp_DaqListType *)config->DaqList[sdpCtx->DaqListNumber];
       pEntry = &(pDaq->Odts[sdpCtx->OdtNumber].OdtEntries[sdpCtx->OdtEntryNumber]);
-      pEntry->Address = address;
-      pEntry->BitOffset = bitOffset;
-      pEntry->Length = length;
-      pEntry->Extension = extension;
 
       msgContext->ResData[0] = pEntry->BitOffset;
       msgContext->ResData[1] = pEntry->Length;
@@ -604,7 +595,6 @@ Std_ReturnType Xcp_DspGetDAQProcessorInfo(Xcp_MsgContextType *msgContext,
   msgContext->ResData[3] = 0; /* MAX_EVENT_CHANNEL */
   msgContext->ResData[4] = config->NumOfEvChls;
   Xcp_SetU16(&msgContext->ResData[5], XCP_MIN_DAQ);
-  msgContext->ResData[7] = 0; /* DAQ_KEY_BYTE */
   msgContext->ResDataLen = 7;
 
   return ret;
@@ -621,7 +611,6 @@ Std_ReturnType Xcp_DspGetDAQResolutionInfo(Xcp_MsgContextType *msgContext,
   msgContext->ResData[4] = 0; /* TIMESTAMP_MODE */
   msgContext->ResData[5] = 0; /* MIN_DAQ */
   msgContext->ResData[6] = 0; /* TIMESTAMP_TICKS */
-  msgContext->ResData[7] = 0;
   msgContext->ResDataLen = 7;
 
   return ret;
@@ -750,7 +739,7 @@ Std_ReturnType Xcp_DspAllocDAQ(Xcp_MsgContextType *msgContext, Xcp_NegativeRespo
     if (daqCount > (XCP_MAX_DAQ - XCP_MIN_DAQ)) {
       ret = E_NOT_OK;
       *nrc = XCP_E_MEMORY_OVERFLOW;
-    } else if (0 != config->DaqList[XCP_MIN_DAQ]->MaxOdt) {
+    } else if ((0 != daqCount) && (0 != config->DaqList[XCP_MIN_DAQ]->MaxOdt)) {
       /* DAT already allocated, need to be free firstly for new allocation */
       ret = E_NOT_OK;
       *nrc = XCP_E_SEQUENCE;

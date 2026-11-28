@@ -321,16 +321,16 @@ void PCap_SD(uint8_t *data, uint32_t length, const TcpIp_SockAddrType *remoteAdd
     flags = data[16];
     payloadLength =
       ((uint32_t)data[4] << 24) + ((uint32_t)data[5] << 16) + ((uint32_t)data[6] << 8) + data[7];
-    if ((payloadLength + 8) != length) {
+    if (payloadLength != (length - 8u)) {
       good = PCap_InvalidSd("payload length", data, length, remoteAddr, isRx);
     } else {
       lengthOfEntries = ((uint32_t)data[20] << 24) + ((uint32_t)data[21] << 16) +
                         ((uint32_t)data[22] << 8) + data[23];
-      if ((28 + lengthOfEntries) <= length) {
+      if (lengthOfEntries <= (length - 28u)) {
         lengthOfOptions = ((uint32_t)data[24 + lengthOfEntries] << 24) +
                           ((uint32_t)data[25 + lengthOfEntries] << 16) +
                           ((uint32_t)data[26 + lengthOfEntries] << 8) + data[27 + lengthOfEntries];
-        if ((28 + lengthOfEntries + lengthOfOptions) != length) {
+        if (lengthOfOptions != (length - 28u - lengthOfEntries)) {
           good = PCap_InvalidSd("options length", data, length, remoteAddr, isRx);
         }
       } else {
@@ -347,6 +347,10 @@ void PCap_SD(uint8_t *data, uint32_t length, const TcpIp_SockAddrType *remoteAdd
       remoteAddr->Addr[3], remoteAddr->Port, sessionId, flags, lengthOfEntries, lengthOfOptions);
     entries = &data[24];
     for (i = 0; (i < lengthOfEntries) && good;) {
+      if ((i + 16) > lengthOfEntries) {
+        good = PCap_InvalidSd("truncated entry", data, length, remoteAddr, isRx);
+        break;
+      }
       switch (entries[i]) {
       case PCAP_SD_FIND_SERVICE:
         i += PCap_SdEntry1("find", &entries[i]);
@@ -369,6 +373,10 @@ void PCap_SD(uint8_t *data, uint32_t length, const TcpIp_SockAddrType *remoteAdd
 
     options = &data[28 + lengthOfEntries];
     for (i = 0; (i < lengthOfOptions) && good;) {
+      if ((i + 12) > lengthOfOptions) {
+        good = PCap_InvalidSd("truncated option", data, length, remoteAddr, isRx);
+        break;
+      }
       switch (options[i + 2]) {
       case PCAP_SD_OPT_IP4_ENDPOINT:
         i += PCap_SdOptionIpv4("endpoint", &options[i]);
@@ -411,6 +419,8 @@ void PCap_Packet(const void *packet, uint32_t length) {
   pcaprecHdr[14] = (length >> 16) & 0xFF;
   pcaprecHdr[15] = (length >> 24) & 0xFF;
 
-  fwrite(pcaprecHdr, sizeof(pcaprecHdr), 1, pcapWireFile);
-  fwrite(packet, length, 1, pcapWireFile);
+  if (NULL != packet) {
+    fwrite(pcaprecHdr, sizeof(pcaprecHdr), 1, pcapWireFile);
+    fwrite(packet, length, 1, pcapWireFile);
+  }
 }

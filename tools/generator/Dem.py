@@ -60,6 +60,8 @@ def gen_shell_data_print(C, data):
 
 def Gen_Dem(cfg, dir):
     general = cfg.get("General", {})
+    useFailedOrderQueue = cfg.get("UseFailedDtcOrderQueue", False)
+    useConfirmedOrderQueue = cfg.get("UseConfirmedDtcOrderQueue", False)
     envMap = {}
     envsMapByName = {data["Name"]: data for data in cfg["Environments"]}
     envsAll = [data["Name"] for data in cfg["Environments"]]
@@ -90,6 +92,10 @@ def Gen_Dem(cfg, dir):
             H.write("#define DEM_EVENT_ID_%s %su\n" % (event["Name"], idx))
             idx += 1
     H.write("#define DTC_ENVENT_NUM %du\n" % (idx))
+    if useFailedOrderQueue:
+        H.write("#define DEM_USE_FAILED_DTC_ORDER_QUEUE\n\n")
+    if useConfirmedOrderQueue:
+        H.write("#define DEM_USE_CONFIRMED_DTC_ORDER_QUEUE\n\n")
     H.write("#ifndef DEM_MAX_FREEZE_FRAME_RECORD\n")
     H.write("#define DEM_MAX_FREEZE_FRAME_RECORD DTC_ENVENT_NUM\n")
     H.write("#endif\n")
@@ -298,6 +304,20 @@ def Gen_Dem(cfg, dir):
         C.write("    %s/* DTCOrigin */\n" % (memory["Origin"]))
         C.write("  },\n")
     C.write("};\n\n")
+    if useFailedOrderQueue or useConfirmedOrderQueue:
+        C.write("/* occurrence-order queues, see doc/EN/Dem.md 3.7 */\n")
+        if useFailedOrderQueue:
+            C.write("extern Dem_NvmDtcFailedOrderQueueType Dem_NvmDtcFailedOrderQueue_Ram;\n")
+        if useConfirmedOrderQueue:
+            C.write("extern Dem_NvmDtcConfirmedOrderQueueType Dem_NvmDtcConfirmedOrderQueue_Ram;\n")
+        C.write("static CONSTANT(Dem_DtcOrderQueueConfigType, DEM_CONST) Dem_DtcOrderQueue = {\n")
+        if useFailedOrderQueue:
+            C.write("  Dem_NvmDtcFailedOrderQueue_Ram.DtcId,\n")
+            C.write("  NVM_BLOCKID_Dem_NvmDtcFailedOrderQueue,\n")
+        if useConfirmedOrderQueue:
+            C.write("  Dem_NvmDtcConfirmedOrderQueue_Ram.DtcId,\n")
+            C.write("  NVM_BLOCKID_Dem_NvmDtcConfirmedOrderQueue,\n")
+        C.write("};\n\n")
     for i, dtc in enumerate(cfg["DTCs"]):
         C.write(
             "static CONSTP2CONST(Dem_MemoryDestinationType, DEM_CONST, DEM_CONST) Dem_Dtc%sMemoryDestinations[]= {\n"
@@ -467,9 +487,11 @@ def Gen_Dem(cfg, dir):
         C.write("    %s,\n" % (dtc["Number"]))
         C.write("    %s, /* DtcId */\n" % (i))
         C.write("    ARRAY_SIZE(Dem_Dtc%sEventRefs),\n" % (i))
+        C.write("    %s, /* FunctionalUnit @ECUC_Dem_00643 */\n"
+                % (GetProp(dtc, general, "FunctionalUnit", 0)))
+        C.write("    %s, /* Severity @ECUC_Dem_00645 */\n"
+                % (GetProp(dtc, general, "Severity", "DEM_SEVERITY_NO_SEVERITY")))
         C.write("    #if 0\n")
-        C.write("    0, /* FunctionalUnit */\n")
-        C.write("    DEM_SEVERITY_NO_SEVERITY, /* Severity */\n")
         C.write("    DEM_NV_STORE_IMMEDIATE_AT_FIRST_OCCURRENCE, /* NvStorageStrategy */\n")
         C.write("    #endif\n")
         C.write("  },\n")
@@ -518,6 +540,8 @@ def Gen_Dem(cfg, dir):
     C.write("#endif\n")
     C.write("  Dem_Dtcs,\n")
     C.write("  Dem_MemoryDestination,\n")
+    if useFailedOrderQueue or useConfirmedOrderQueue:
+        C.write("  &Dem_DtcOrderQueue,\n")
     C.write("  Dem_OperationCycleStates,\n")
     C.write("  ARRAY_SIZE(FreeFrameDataConfigs),\n")
     C.write("  ARRAY_SIZE(Dem_EventConfigs),\n")

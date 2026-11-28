@@ -24,7 +24,7 @@ def post_process_messages(p):
                 "Factor": 1,
                 "Offset": 0,
                 "Min": 0,
-                "Max": (1 << size - 1),
+                "Max": ((1 << size) - 1),
                 "Unit": "",
                 "InitValue": sigi2["Initial"],
                 "Node": sigi2["Subscriber"],

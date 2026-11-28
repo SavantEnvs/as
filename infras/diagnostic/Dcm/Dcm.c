@@ -221,6 +221,7 @@ void Dcm_TpRxIndication(PduIdType id, Std_ReturnType result) {
                   config->RxBuffer[2]));
     } else {
       ASLOG(DCME, ("Fatal Error when do RxInd, reset to Idle\n"));
+      context->RxBufferState = DCM_BUFFER_IDLE;
     }
   } else {
     ASLOG(DCME, ("Error when do RxInd, reset to Idle\n"));
@@ -293,6 +294,11 @@ void Dcm_TpTxConfirmation(PduIdType id, Std_ReturnType result) {
     /* context->CurPduId = DCM_INVALID_PDU_ID; */
     context->TxBufferState = DCM_BUFFER_IDLE;
   }
+}
+
+/* @SWS_Dcm_01092 */
+void Dcm_TxConfirmation(PduIdType txPduId, Std_ReturnType result) {
+  Dcm_TpTxConfirmation(txPduId, result);
 }
 
 void Dcm_GetVersionInfo(Std_VersionInfoType *versionInfo) {

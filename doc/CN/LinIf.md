@@ -30,7 +30,7 @@ comments: true
 6. [构建与运行示例](#6-构建与运行示例)
 7. [关键注意事项](#7-关键注意事项)
 8. [问题排查](#8-问题排查)
-9. [已知限制与代码评审发现](#9-已知限制与代码评审发现)
+9. [已知限制](#9-已知限制)
 10. [相关文档](#10-相关文档)
 
 ---
@@ -274,7 +274,7 @@ sequenceDiagram
 | `LinIf_GetVersionInfo(info)` | 双方 | 版本 4.0.2 |
 
 `LinIf_Transmit` 与 `LinIf_LinErrorIndication` 在 `LinIf.h` 中有声明但
-**没有实现**（见第 9 节）。
+**没有实现**。
 
 ### 调度方式
 
@@ -348,9 +348,7 @@ AS_LOG_LINIF=3 AS_LOG_LINTP=3 build\nt\GCC\LinApp\LinApp.exe
 
 ---
 
-## 9. 已知限制与代码评审发现
-
-### 9.1 功能限制
+## 9. 已知限制
 
 * **没有 `LinIf_Transmit`。** 在 `LinIf.h` 中有声明但没有实现——本架构中 PDU
   总是按调度（主节点）或按帧头（从节点）触发，Com/LinTp 从不按 id 主动推送
@@ -365,23 +363,6 @@ AS_LOG_LINIF=3 AS_LOG_LINTP=3 build\nt\GCC\LinApp\LinApp.exe
 * **主节点切换表时从"最后一项"起步**（`curSch = numOfEntries - 1`，随后
   `curSch++` 回绕到 0），因此第一条表项立即执行——行为正确但隐晦；release
   note 4.0.1 记录了相关的唤醒修复。
-
-### 9.2 代码评审发现
-
-| # | 位置 | 发现 |
-| --- | --- | --- |
-| 1 | `LinIf.c:435` | `LinIf_HeaderIndication` 在 `uint16_t` 上计算 `h = numOfEntries - 1`：**空的从节点表**（LDF 导入后可能没有任何 PDU 的从节点）会下溢为 65535，随后的二分查找将越界读。目前只靠"生成器总会生成诊断 PDU"这一事实兜底。 |
-| 2 | `LinIf.c:89-102` | POLLING 模式下 `Lin_GetStatus` 返回 RX 缓冲区指针，而 8 字节日志 dump **无条件**读取 `SduPtr[0..7]`——`Dl < 8` 的帧会越界读驱动缓冲区（与 CanIf 的日志 bug 同一模式）。 |
-| 3 | `LinIf.c:543` | `memcpy(context->frame.SduPtr, Lin_SduPtr, entry->dlc)` 按 `entry->dlc` 复制，而驱动并未报告实际收到的字节数；应答方 DLC 不一致时会污染缓冲区或越界读。 |
-| 4 | `LinIf.c:38-75` | `LinIf_ScheduleEntry` 把 `TriggerTransmit` 失败（`FAIL to provide Tx buffer`）当作该表项的 `E_NOT_OK`，但**不推进也不跳过**——同一表项在 `timer` 超时后经主超时路径重试，且没有重试计数。上层永久无响应时，整个调度表卡死（后续表项永不执行）。 |
-| 5 | `LinIf.c:111-121` | `LinIf_CheckEntry` 中镜像上报对**任何**最终状态（含 `LIN_TX_ERROR` / `RX_NO_RESPONSE`）都执行，但上报的是 `context->data`——RX 无应答时缓冲区是残留数据，镜像会为失败帧显示乱码字节。 |
-| 6 | `LinIf.c:17-18` | `AS_LOG_LINIFE`（错误通道）默认 **0**，即不设 `AS_LOG_LINIF`/`AS_LOG_LINIFE` 环境变量时所有 LinIf 错误都不可见。"我的 LIN 不工作"的大多数场景默认完全不产生输出。 |
-| 7 | `LinIf.c:246-259` | `LinIf_Init` 用 `int i` 遍历 `numOfChannels`（uint16）——无害，但与代码库其余部分不一致。 |
-| 8 | `LinIf.py:112-121` | 调度表项的 `Drc` 由 PDU **名称后缀**（`name[-2:]`）推导，而不是看它属于 `RxPdus` 还是 `TxPdus`。把名为 `FOO_TX` 的 PDU 放进 `RxPdus` 会静默生成 TX 回调，对 RX 的 Com PDU 符号调用 `Com_TriggerTransmit`——生成期成功，运行期行为错误。 |
-| 9 | `LinIf.py:82-87` | `LINIF_DELAY_UINT` 在 `_WIN32`（10）与目标板（1）静默不同；同一 JSON 在两侧产生不同的绝对时序，且生成头文件中无说明。 |
-| 10 | `LinIf.py:388-389` | `extract()` 按 `toNum(id) & 0x1FFFFFFF` 排序 PDU，但 `ScheduleTables` 表项按名称引用 PDU 且保持 LDF 顺序不重排——二分查找的前提（有序表）只对从节点的隐式表成立，主节点表不一定有序。 |
-
----
 
 ## 10. 相关文档
 

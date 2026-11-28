@@ -30,7 +30,7 @@ comments: true
 6. [构建与运行示例](#6-构建与运行示例)
 7. [关键注意事项](#7-关键注意事项)
 8. [问题排查](#8-问题排查)
-9. [已知限制与代码评审发现](#9-已知限制与代码评审发现)
+9. [已知限制](#9-已知限制)
 10. [相关文档](#10-相关文档)
 
 ---
@@ -131,7 +131,7 @@ E2E 需要**两个**文件，且二者必须互相一致：
 | `DataIDNibbleOffset` | P11 | 4 位 Data ID 半字节的比特偏移（仅 NIBBLE 模式），默认 `12` |
 | `Offset` | P22/P44/P05 | CRC 的比特偏移（P22：计数器在随后的半字节），默认 `0` |
 | `MaxDeltaCounter` | 所有 Check 项 | 允许的最大计数器增量；默认 `1`（丢一帧即 `E2E_E_WRONG_SEQUENCE`） |
-| `UsePostBuildConfig` | 全部 | 默认 `false`；生成 `E2E_USE_PB_CONFIG`（其占位宏误名为 `cantpConfig`，见第 9 节） |
+| `UsePostBuildConfig` | 全部 | 默认 `false`；生成 `E2E_USE_PB_CONFIG` |
 
 所有偏移单位均为**比特**，不是字节。
 
@@ -419,14 +419,11 @@ DEMO    :[DemoRx] MSG_TIME checked OK, Seconds=604797
 | 每丢一帧后就打 `P11 wrong sequence` | `MaxDeltaCounter` 太小（默认 1） |
 | 接收端打 `P11 Nibble <x> not correct` | NIBBLE 模式：收到字节的 Data ID 高半字节与接收端 `(DataID >> 8) & 0xF` 不符 |
 | 明明该 CRC 失败却全部通过 | 你看的是发送端——只有 Check 产生结论 |
-| `E2E_CheckProfile05Configs` 链接错误 | 生成器缺陷：`E2E_USE_CHECK_P05` 只在 `CheckP44` 非空时生成（见第 9 节） |
 | 帧被丢弃且没有任何 E2E 日志 | 打开 `AS_LOG_E2EE=2`；同时确认报文在 `Com.json` 中确有 `E2E` 映射 |
 
 ---
 
-## 9. 已知限制与代码评审发现
-
-### 9.1 功能限制
+## 9. 已知限制
 
 * **没有 E2E 状态机（SM）API。** `E2E.h` 定义了 `E2E_E_SM_*` 返回码，但
   `E2E_PxxCheck` 是裸用的；没有 `E2E_ExxxCheckSMInitialize`，没有状态窗口，
@@ -438,23 +435,6 @@ DEMO    :[DemoRx] MSG_TIME checked OK, Seconds=604797
   意味着 Com 层任何变化（填充、DLC）都会改变 CRC；两端 DLC 必须完全一致。
 * **每个条目只有一个计数器上下文变量**——对单线程的 Com 主函数没问题，但
   若从不同上下文调用 Protect/Check 则不安全。
-
-### 9.2 代码评审发现
-
-| # | 位置 | 发现 |
-| --- | --- | --- |
-| 1 | `E2E.py:49` | **`E2E_USE_CHECK_P05` 只在 `CheckP44` 非空时生成**（`if len(cfg.get("CheckP44", [])):` 应为 `CheckP05`）。只配 P05 校验、不配 P44 时该宏永远不会定义，`E2E_P05Check` 不参与编译，而 `E2E_Cfg.c` 仍引用 `E2E_CheckProfile05Configs`——直接编译失败。 |
-| 2 | `E2E.c:318` | `E2E_P22Protect` 校验的是 `profileId < numOfProtectP11`——从 P11 复制粘贴的错误。P11 与 P22 同时配置时边界错误（`numOfProtectP22 > numOfProtectP11` 时放行越界 id，否则拒绝合法 id）；只配 P22 时该结构体成员甚至不存在。 |
-| 3 | `E2E.c:462` | `E2E_P44Check` 使用 `offset = config->P44.Offset`，漏了 `>> 3`，而 `E2E_P44Protect` 用的是 `Offset >> 3`。任何非零（或非字节对齐）的偏移都会让 Check 从错误的字节读长度/计数器/DataID/CRC。demo 之所以正常，仅仅因为 `Offset = 0`。 |
-| 4 | `E2E.c:16` | `E2E_USE_PB_CONFIG` 下 `#define E2E_CONFIG cantpConfig`——占位宏沿用了 CanTp 模块名（复制粘贴痕迹）。单独对 E2E 做 post-build 构建会链接失败。 |
-| 5 | `E2E.c:49-60` | `ALT` 模式下计数器为奇数时代码混入 Data ID **低**字节，而其自身注释（及 `PRS_E2E_00634` 变体 1B）说偶数计数器取低字节。Protect 与 Check 共用该函数，SSAS 对 SSAS 永远一致，但与符合规范的协议栈互通时奇数计数器会校验失败。 |
-| 6 | `E2E.c:289-307` | `E2E_E_WRONG_SEQUENCE` 之后计数器上下文仍用收到的值更新。这是有意为之（快速重同步），但与要求显式 `E2E_ExxxCheckSM...` 重启的更严格实现不同，功能安全论证中需要说明。 |
-| 7 | `E2E.c:465` | P44 长度检查是 `(ReceivedLength < length)` 即失败，正确的要求应是相等；比携带长度**长**的帧反而通过。 |
-| 8 | `Com.py:583-614` | 只要报文有 `E2E` 键且相应 `TxIpduCallout`/`RxIpduCallout` 名字已设置就会生成 E2E callout——用户同名 callout 会在链接期撞符号（重复定义），而不是在生成期被拒绝。 |
-| 9 | `E2E.c:220` | P11 计数器按规范在 14 后回绕（`> 0x0E`）；但配置中的 `MaxDeltaCounter` 可以大于 15 而没有范围校验，会让 `E2E_E_WRONG_SEQUENCE` 永远不可能出现。 |
-| 10 | `E2E.py:118,134` | 对 JSON 的 `DataIDList` 执行 `eval(str(dl))`——数字列表没问题，但配置文件中嵌入的任意 Python 代码也会被执行。 |
-
----
 
 ## 10. 相关文档
 

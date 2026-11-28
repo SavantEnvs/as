@@ -30,7 +30,6 @@ comments: true
 6. [Build and run a demo](#6-build-and-run-a-demo)
 7. [Key notes and gotchas](#7-key-notes-and-gotchas)
 8. [Troubleshooting](#8-troubleshooting)
-9. [Known limitations](#9-known-limitations)
 
 ---
 
@@ -42,9 +41,10 @@ comments: true
   attempts for `DelayTime` ms.
 * **Data services** - Read DID (0x22), Write DID (0x2E), Read Scaling DID (0x24),
   Read Periodic DID (0x2A), Dynamically Define DID (0x2C), IO Control (0x2F).
-* **Memory services** - Read Memory (0x23), Write Memory (0x3D),
-  RequestDownload (0x34) / TransferData (0x36) / RequestTransferExit (0x37) with
-  per-range `Sessions`/`Securities`/`Attr` checks.
+* **Memory services** - Read Memory (0x23), Write Memory (0x3D) with per-range
+  `Sessions`/`Securities`/`Attr` checks, RequestDownload (0x34) /
+  TransferData (0x36) / RequestTransferExit (0x37) whose address/permission
+  checks are **delegated to the app callback** (`ProcessRequestDownloadFnc` & co).
 * **Routine Control (0x31)** - start/stop/result callbacks per routine.
 * **Ecu Reset (0x11)**, Tester Present (0x3E), Communication Control (0x28),
   Clear/Read DTC (0x14/0x19, forwarded to [Dem](Dem.md)), Authentication (0x29,
@@ -97,7 +97,7 @@ is `Services`**.
 | `Securities[]` | required | Security level table |
 | `Services[]` | required | Service table (see 3.3) |
 | `Memories[]` | optional | Memory ranges for 0x23/0x3D/0x34/0x36/0x37 |
-| `memory.format` | `[0x44]` | Allowed AddressAndLengthFormatIdentifiers; `0x44` = 4-byte address + 4-byte size |
+| `MemoryFormat[]` | `[68]` | Allowed AddressAndLengthFormatIdentifiers (`0x44` = 4-byte address + 4-byte size); omitting the key or an empty list disables the format check, the Excel import path always writes `[0x44]` |
 
 ### 3.2 `Timings`
 
@@ -139,7 +139,7 @@ no runtime reconfiguration.
 | `Sessions` | Allowed sessions; empty = all |
 | `Securities` | Required security levels; empty = none |
 | `API` | Service-level permission callback, e.g. `App_GetSessionChangePermission` for 0x10 |
-| `Delay` | ms; minimum time before this service can be requested again (0x11: reset delay) |
+| `Delay` | ms; **only used by 0x11** - the delay before the reset is actually performed (default 100). Other services ignore it |
 | `Functions[]` | Sub-function table with per-sub-function `API` (0x28) or predefined sub-functions (0x29) |
 | `DIDs[]` | For 0x22/0x2E/0x24/0x2A: the DID table |
 | `Routines[]` | For 0x31: routine table |
@@ -183,9 +183,12 @@ buffer - size the TX buffer accordingly.
 | `Access` | `"physical"` / `"functional"` |
 | `Sessions`, `Securities` | Permission override for the range |
 
-Every 0x23/0x3D/0x34 request is validated at runtime by `Dcm_DspIsMemoryValid()`:
-format id must be in `memory.format`, address must fall completely inside a range
+Every 0x23/0x3D request is validated at runtime by `Dcm_DspIsMemoryValid()`:
+format id must be in `MemoryFormat`, address must fall completely inside a range
 with a matching attribute, and the range's session/security must be satisfied.
+**0x34/0x36/0x37 do not go through this check** - the range and permission
+validation is whatever the application does inside `ProcessRequestDownloadFnc` /
+`ProcessTransferData*` / `ProcessRequestTransferExitFnc`.
 
 ---
 
@@ -212,9 +215,13 @@ sequenceDiagram
   and the deadline extends to `P2StarServerMax`.
 * **S3 timeout**: without a request for `S3Server` ms the session falls back to
   Default and all unlocked security levels are dropped.
-* **Security lockout**: after `NumAtt` wrong keys the level answers
-  NRC 0x36/0x37 (exceeded number of attempts / required time delay) until
-  `DelayTime` has passed.
+* **Security lockout**: the behavior depends on `SeedProtection` (default
+  **true**). With it on, **failed keys never count** - a wrong key always gets
+  NRC 0x35 and the level stays unlocked. What counts instead are **seed
+  requests**: after `NumAtt + 1` requestSeed calls the level answers NRC 0x36,
+  then NRC 0x37 until the ECU is reset. With `SeedProtection: false` the
+  classic rule applies: `NumAtt` failed keys lock the level for `DelayTime`
+  ms (NRC 0x36/0x37).
 * **Dual channels**: functional requests (P2A) are answered only when the
   service allows `functional` access; the response goes back on the physical
   channel.
@@ -229,7 +236,7 @@ sequenceDiagram
 | --- | --- | --- |
 | `Dcm_Init(ConfigPtr)` / `Dcm_MainFunction()` | EcuM / scheduler | Init, timer + pending response processing |
 | `Dcm_StartOfReception` / `Dcm_CopyRxData` / `Dcm_TpRxIndication` | PduR | TP reception chain |
-| `Dcm_CopyTxData` / `Dcm_TpTxConfirmation` / `Dcm_TxConfirmation` | PduR | TP transmission chain |
+| `Dcm_CopyTxData` / `Dcm_TpTxConfirmation` / `Dcm_TxConfirmation` | PduR | TP transmission chain (`Dcm_TxConfirmation` is the @SWS_Dcm_01092 entry point and forwards to `Dcm_TpTxConfirmation`) |
 | `Dcm_GetSecurityLevel` / `Dcm_SetSecurityLevel` | app / bootloader | Query or force a security level |
 | `Dcm_GetSesCtrlType` / `Dcm_SetSesCtrlType` / `Dcm_ResetToDefaultSession` | app / bootloader | Query or force a session |
 | `Dcm_SessionChangeIndication` | DSL internal | Hook on session change |
@@ -265,8 +272,11 @@ Expected behaviour (with the demo config):
   `App_ReadFingerPrint()`.
 * `10 03` answers `50 03 ...` with the configured P2/P2* values.
 * A second `27 01` before sending the key returns the **same** cached seed
-  (seed protection).
-* Three wrong keys lock level 1 for 3 s - further `27 xx` get NRC 0x36/0x37.
+  (seed protection) - and counts toward the lockout: the 4th `27 01` answers
+  NRC 0x36, later ones NRC 0x37 (default `SeedProtection: true`).
+* Wrong keys are **not** counted by default (`SeedProtection: true`): a wrong
+  key gets NRC 0x35 and the level stays unlocked. Set `SeedProtection: false`
+  for the classic 3-strikes lockout of NRC 0x36/0x37.
 
 ---
 
@@ -302,41 +312,14 @@ Expected behaviour (with the demo config):
 | NRC 0x11 (service not supported) | service missing from `Services[]` or `Id` typo | `GEN/Dcm_Cfg.c` service table |
 | NRC 0x12 (sub-function not supported) | missing `Functions[]` entry | service JSON |
 | NRC 0x22 / 0x7F (conditions not correct / rejected) | `App_GetSessionChangePermission` or service `API` returned E_NOT_OK | your callbacks |
-| NRC 0x31 (request out of range) on 0x23 | address outside `Memories[]`, wrong `Attr`, or format id not in `memory.format` | `Dcm_DspIsMemoryValid` inputs |
+| NRC 0x31 (request out of range) on 0x23 | address outside `Memories[]`, wrong `Attr`, or format id not in `MemoryFormat` | `Dcm_DspIsMemoryValid` inputs |
 | NRC 0x33 (security denied) | service needs a `Securities[]` entry and the level is not unlocked | `27 xx` state |
-| NRC 0x36/0x37 after 3 keys | security lockout active | wait `DelayTime` ms |
+| NRC 0x35 keeps coming, no lockout | `SeedProtection: true` (default) counts seed requests, not failed keys | `Security` block in `Dcm.json` |
+| NRC 0x36/0x37 on `27 xx` | with seed protection: more than `NumAtt + 1` requestSeed calls since reset | wait is not enough - reset the ECU, or set `SeedProtection: false` |
 | Response never arrives, no NRC | handler returned `DCM_E_PENDING` and never completed | pending state machine, `P2StarServerMax` |
 | `DID read` returns garbage | `Size` in JSON smaller than what the callback writes | callback vs `Size` |
 
 ---
-
-## 9. Known limitations
-
-Code review findings verified against `infras/diagnostic/Dcm/*` and
-`tools/generator/Dcm.py`:
-
-1. **Memory range check can overflow**
-   (`Dcm_Dsp.c:1882`): `(memoryAddress + memorySize) <= Mems[i].high` - an
-   address close to `0xFFFFFFFF` wraps around and passes the range check. The
-   allowed `memory.format` limits the blast radius, but the check itself should
-   use `memoryAddress <= high - memorySize`.
-2. **Misspelled permission keys are accepted silently**: the generator reads
-   `Sessions`/`Securities`/`Access` with defaults that widen access (empty =
-   everything allowed). A typo in a DID's `Sessions` list does not fail the
-   build.
-3. **`security.SeedProtection` default is `true`** - the seed is cached and
-   re-sent on repeated `27 xx` requests; implementations relying on a fresh seed
-   per request must set it explicitly.
-4. **Dynamic-length DID wrapper appends 2 bytes** (`data[length]`,
-   `data[length+1]`) - bounded by `resMaxDataLen` in `Dcm_Dsp.c:224`, but the
-   configured DID `Size` must leave room for the 2 length bytes in the response.
-5. **0x29 Authentication service functions are generated but several depend on
-   `USE_CRYPTO` + Csm**, which is not part of every build - enabling the service
-   without the stack fails at link time.
-6. **`Dcm_Transmit(buffer, len, functional)` takes a raw buffer** without a
-   length sanity check against `buffer.tx` - the caller must not exceed it.
-7. **Generator: the Excel (`ServiceMap`) and JSON paths must stay in sync
-   manually**; there is no tooling to regenerate JSON from the workbook.
 
 **Related documents:** [CanTp](CanTp.md) - [PduR](PduR.md) - [Dem](Dem.md) -
 [Com](Com.md) - [can-bootloader](can-bootloader.md)

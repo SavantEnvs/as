@@ -169,7 +169,7 @@ def Gen_Mirror(cfg, dir):
         C.write("};\n\n")
     for network in SourceNetworkLins:
         staticFilters = network.get("StaticFilters", [])
-        MaxDynamicFilters = network.get("MaxDynamicFilters", 32)
+        MaxDynamicFilters = network.get("MaxDynamicFilters", 128)
         if len(staticFilters) > 0:
             C.write(
                 "static const Mirror_SourceLinFilterType Mirror_SourceLinStaticFilters_%s[]={\n" % (network["Name"])

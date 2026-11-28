@@ -268,7 +268,7 @@ def Gen_Os(cfg, dir):
                 for ires in inres_list:
                     if res["Name"] == ires["Name"]:
                         if ires["Priority"] > runPrio:
-                            runPrio = res["Priority"]
+                            runPrio = ires["Priority"]
         maxAct = task.get("Activation", 1)
         event = "NULL"
         if len(task.get("EventList", [])) > 0:
@@ -393,7 +393,7 @@ def Gen_Os(cfg, dir):
     evList = []
     for task in task_list:
         for ev in task.get("EventList", []):
-            if ev in evList:
+            if ev["Name"] in evList:
                 print("WARNING: %s for %s is with the same name with others" % (ev["Name"], task["Name"]))
             else:
                 evList.append(ev["Name"])

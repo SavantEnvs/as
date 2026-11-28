@@ -72,7 +72,7 @@ Std_ReturnType Xcp_DspGetSeed(Xcp_MsgContextType *msgContext, Xcp_NegativeRespon
   Xcp_ContextType *context = Xcp_GetContext();
   P2CONST(Xcp_GetSeedConfigType, AUTOMATIC, XCP_CONST)
   serCfg = (P2CONST(Xcp_GetSeedConfigType, AUTOMATIC, XCP_CONST))Xcp_GetCurServiceConfig();
-  uint16_t seedLen = msgContext->ResDataLen - 1;
+  uint16_t seedLen = msgContext->ResMaxDataLen - 1;
 
   if (msgContext->ReqDataLen >= 2) {
     if ((0 != msgContext->ReqData[0])) {
@@ -186,12 +186,17 @@ Std_ReturnType Xcp_DspUpload(Xcp_MsgContextType *msgContext, Xcp_NegativeRespons
       msgContext->ReqData[3] = 0;
     }
     offset = msgContext->ReqData[3];
-    if ((length - offset) > msgContext->ResMaxDataLen) {
+    if (offset > length) {
+      ret = E_NOT_OK;
+      *nrc = XCP_E_CMD_SYNTAX;
+    } else if ((length - offset) > msgContext->ResMaxDataLen) {
       doSz = msgContext->ResMaxDataLen;
     } else {
       doSz = (length - offset);
     }
-    ret = Xcp_MtaRead(mta->Extension, mta->Address + offset, msgContext->ResData, doSz, nrc);
+    if (E_OK == ret) {
+      ret = Xcp_MtaRead(mta->Extension, mta->Address + offset, msgContext->ResData, doSz, nrc);
+    }
     if (E_OK == ret) {
       offset += doSz;
       if (offset >= length) {

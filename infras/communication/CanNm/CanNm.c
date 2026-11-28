@@ -790,7 +790,7 @@ Std_ReturnType CanNm_EnableCommunication(NetworkHandleType nmChannelHandle) {
   config = &CANNM_CONFIG->ChannelConfigs[nmChannelHandle];
   CanNmEnterCritical();
   context->Flags &= ~CANNM_DISABLE_COMMUNICATION_REQUEST_MASK;
-  CanNmEnterCritical();
+  CanNmExitCritical();
   CanNmSetAlarm(Tx, 0u);                           /* @SWS_CanNm_00178 */
   CanNmSetAlarm(NmTimeout, config->NmTimeoutTime); /* @SWS_CanNm_00179 */
 #ifdef CANNM_REMOTE_SLEEP_IND_ENABLED
@@ -837,6 +837,7 @@ void CanNm_RxIndication(PduIdType rxPduId, const PduInfoType *pduInfoPtr) {
 #ifdef CANNM_CAR_WAKEUP_SUPPORT
   const Can_HwType *Mailbox = (const Can_HwType *)pduInfoPtr->MetaDataPtr;
 #endif
+  uint16_t rxLen;
 
   DET_VALIDATE(NULL != CANNM_CONFIG, 0x42, CANNM_E_UNINIT, return);
   DET_VALIDATE(rxPduId < CANNM_CONFIG->NumOfChannels, 0x42, CANNM_E_INVALID_CHANNEL, return);
@@ -853,7 +854,11 @@ void CanNm_RxIndication(PduIdType rxPduId, const PduInfoType *pduInfoPtr) {
 
   if (E_OK == ret) {
     /* @SWS_CanNm_00035 */
-    (void)memcpy(context->RxPdu, pduInfoPtr->SduDataPtr, sizeof(context->RxPdu));
+    rxLen = pduInfoPtr->SduLength;
+    if (rxLen > sizeof(context->RxPdu)) {
+      rxLen = sizeof(context->RxPdu);
+    }
+    (void)memcpy(context->RxPdu, pduInfoPtr->SduDataPtr, rxLen);
     if (config->PduCbvPosition < CANNM_PDU_OFF) {
       if (0u != (context->RxPdu[config->PduCbvPosition] & CANNM_CBV_REPEAT_MESSAGE_REQUEST)) {
         if (TRUE == config->NodeDetectionEnabled) {
@@ -1097,7 +1102,7 @@ Std_ReturnType CanNm_SetSleepReadyBit(NetworkHandleType nmChannelHandle, boolean
   } else {
     ret = E_NOT_OK;
   }
-  CanNmEnterCritical();
+  CanNmExitCritical();
   if (E_OK == ret) {
     CanNm_SendMessage(context, config, 0);
   }

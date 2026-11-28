@@ -31,7 +31,7 @@ comments: true
 6. [Build and run a demo](#6-build-and-run-a-demo)
 7. [Key notes and gotchas](#7-key-notes-and-gotchas)
 8. [Troubleshooting](#8-troubleshooting)
-9. [Known limitations and code review findings](#9-known-limitations-and-code-review-findings)
+9. [Known limitations](#9-known-limitations)
 10. [Related documents](#10-related-documents)
 
 ---
@@ -135,7 +135,7 @@ E2E needs **two** files that must agree with each other:
 | `DataIDNibbleOffset` | P11 | bit offset of the 4-bit Data ID nibble (NIBBLE mode only); default `12` |
 | `Offset` | P22/P44/P05 | bit offset of the CRC (P22: counter follows in the next nibble); default `0` |
 | `MaxDeltaCounter` | all Check entries | maximum allowed counter delta; default `1` (any lost frame -> `E2E_E_WRONG_SEQUENCE`) |
-| `UsePostBuildConfig` | all | `false` default; emits `E2E_USE_PB_CONFIG` (whose placeholder macro is misnamed `cantpConfig`, see section 9) |
+| `UsePostBuildConfig` | all | `false` default; emits `E2E_USE_PB_CONFIG` |
 
 All offsets are in **bits**, not bytes.
 
@@ -439,14 +439,11 @@ shows the reason - `P11 Wrong Crc`, `P11 repeat` or `P11 wrong sequence`.
 | Receiver logs `P11 wrong sequence` after every loss | `MaxDeltaCounter` too small (default 1) |
 | Receiver logs `P11 Nibble <x> not correct` | NIBBLE mode: the high nibble of the received Data ID byte does not match `(DataID >> 8) & 0xF` on the receiver |
 | Everything passes although you expected a CRC failure | you are looking at the Tx side - only Check produces verdicts |
-| Link error on `E2E_CheckProfile05Configs` | generator quirk: `E2E_USE_CHECK_P05` is emitted only when `CheckP44` is non-empty (see section 9) |
 | Frames dropped with no E2E log at all | enable `AS_LOG_E2EE=2`; also confirm the message actually has the `E2E` mapping in `Com.json` |
 
 ---
 
-## 9. Known limitations and code review findings
-
-### 9.1 Functional limitations
+## 9. Known limitations
 
 * **No E2E state machine (SM) API.** `E2E.h` defines `E2E_E_SM_*` codes but the
   `E2E_PxxCheck` calls are used bare; there is no `E2E_ExxxCheckSMInitialize`,
@@ -461,23 +458,6 @@ shows the reason - `P11 Wrong Crc`, `P11 repeat` or `P11 wrong sequence`.
 * **Counter context is a single variable per entry** - shared between callout
   invocation contexts; fine for the single-threaded Com main functions, but not
   safe if Protect/Check were called from different contexts.
-
-### 9.2 Code review findings
-
-| # | Where | Finding |
-| --- | --- | --- |
-| 1 | `E2E.py:49` | **`E2E_USE_CHECK_P05` is emitted only when `CheckP44` is non-empty** (`if len(cfg.get("CheckP44", [])):` should be `CheckP05`). A configuration with P05 checks but no P44 checks never defines the macro, so `E2E_P05Check` is not compiled while `E2E_Cfg.c` still references `E2E_CheckProfile05Configs` - the build breaks. |
-| 2 | `E2E.c:318` | `E2E_P22Protect` validates `profileId < numOfProtectP11` - copy-paste from P11. When both P11 and P22 are configured the bound is wrong (allows out-of-range P22 ids when `numOfProtectP22 > numOfProtectP11`, rejects valid ones otherwise); with P22 only, the struct member does not even exist. |
-| 3 | `E2E.c:462` | `E2E_P44Check` uses `offset = config->P44.Offset` without `>> 3`, while `E2E_P44Protect` uses `Offset >> 3`. Any non-zero (or non-byte-aligned) offset makes Check read length/counter/DataID/CRC from the wrong bytes. Works only because the demo uses `Offset = 0`. |
-| 4 | `E2E.c:16` | `#define E2E_CONFIG cantpConfig` under `E2E_USE_PB_CONFIG` - the placeholder macro is named after the CanTp module (copy-paste). It compiles only because `SecOC`-style PB code declares it per module; a PB build of E2E alone would fail to link. |
-| 5 | `E2E.c:49-60` | In `ALT` mode the code includes the Data ID **low** byte when the counter is odd, while its own comment (and `PRS_E2E_00634` variant 1B) says even counter -> low byte. Protect and Check share the function, so SSAS-to-SSAS always agrees, but interop with a spec-conformant stack breaks on odd counters. |
-| 6 | `E2E.c:289-307` | After `E2E_E_WRONG_SEQUENCE` the counter context is still updated with the received value. That is deliberate (fast resync) but differs from stricter AUTOSAR implementations that require an explicit `E2E_ExxxCheckSM...` restart; document it in your safety case. |
-| 7 | `E2E.c:465` | P44 length check is `(ReceivedLength < length)` -> fail. Equality would be the correct requirement; a frame *longer* than the carried length passes. |
-| 8 | `Com.py:583-614` | The E2E callout is emitted whenever the message has an `E2E` key *and* the corresponding `TxIpduCallout`/`RxIpduCallout` name is set - a user-defined callout body of the same name would collide at link time (duplicate symbol) rather than being rejected at generation time. |
-| 9 | `E2E.c:220` | P11 counter wraps after 14 (`> 0x0E`), per spec; but nothing prevents `MaxDeltaCounter > 15` in the config, which would make `E2E_E_WRONG_SEQUENCE` unreachable. No range validation of `MaxDeltaCounter`. |
-| 10 | `E2E.py:118,134` | `eval(str(dl))` on the JSON `DataIDList` - works for lists of numbers but will happily execute arbitrary Python embedded in the config file. |
-
----
 
 ## 10. Related documents
 

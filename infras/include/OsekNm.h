@@ -13,6 +13,8 @@
 /* @ nm253.pdf 4.4.3.1 P98 */
 #define OSEKNM_BUS_SLEEP ((OsekNm_ModeNameType)1)
 #define OSEKNM_AWAKE ((OsekNm_ModeNameType)2)
+
+#define OSEKNM_E_PARAM_POINTER 0x01u
 /* ================================ [ TYPES     ] ============================================== */
 /* @ nm253.pdf 4.3 P89 */
 typedef uint8_t OsekNm_NodeIdType;

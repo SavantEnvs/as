@@ -239,11 +239,11 @@ def Gen_BL(cfg, dir):
         C.write("\n")
         C.write("const BL_MemoryInfoType blMemoryListB[] = {\n")
         C.write(f" /* FLASH DRIVER */ {{0x{fls_low:08X}, 0x{fls_high:08X}, BL_FLSDRV_IDENTIFIER}},\n")
-        for bank in flash_b:
+        for idx, bank in enumerate(flash_b):
             bank_addr = toNum(bank.get("Address", 0))
             bank_size = toNum(bank.get("Size", 0))
             if idx == len(flash_b) - 1:
-                bank_size -= app_a_meta_backup_size
+                bank_size -= app_b_meta_backup_size
             C.write(
                 f" /* APPLICATION B */ {{0x{bank_addr:08X}, 0x{bank_addr + bank_size:08X}, BL_FLASH_IDENTIFIER}},\n"
             )

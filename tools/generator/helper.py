@@ -73,7 +73,7 @@ TypeInfoMap = {
     "uint32": {"Size": 4, "IsArray": False, "ctype": "uint32_t"},
     "int32": {"Size": 4, "IsArray": False, "ctype": "int32_t"},
     "uint64": {"Size": 8, "IsArray": False, "ctype": "uint64_t"},
-    "int64": {"Size": 8, "IsArray": False, "ctype": "uint64_t"},
+    "int64": {"Size": 8, "IsArray": False, "ctype": "int64_t"},
     "float": {"Size": 4, "IsArray": False, "ctype": "float"},
     "double": {"Size": 8, "IsArray": False, "ctype": "double"},
     "bool_n": {"Size": 1, "IsArray": True, "ctype": "boolean"},

@@ -527,7 +527,7 @@ Std_ReturnType UdpNm_RepeatMessageRequest(NetworkHandleType nmChannelHandle) {
           context->Data[config->PduCbvPosition] |= UDPNM_CBV_REPEAT_MESSAGE_REQUEST;
         }
       }
-      UdpNmEnterCritical();
+      UdpNmExitCritical();
       break;
     default:
       /* @SWS_UdpNm_00137 */
@@ -550,7 +550,7 @@ Std_ReturnType UdpNm_DisableCommunication(NetworkHandleType nmChannelHandle) {
     /* @SWS_UdpNm_00170 */
     UdpNmEnterCritical();
     context->Flags |= UDPNM_DISABLE_COMMUNICATION_REQUEST_MASK;
-    UdpNmEnterCritical();
+    UdpNmExitCritical();
     /* could see codes that check UDPNM_DISABLE_COMMUNICATION_REQUEST_MASK in the MainFunction,
      * That is because that Alarm operation is not atomic, so the codes that added to check
      * UDPNM_DISABLE_COMMUNICATION_REQUEST_MASK is a workaroud and which is not good but it
@@ -577,7 +577,7 @@ Std_ReturnType UdpNm_EnableCommunication(NetworkHandleType nmChannelHandle) {
     config = &UDPNM_CONFIG->ChannelConfigs[nmChannelHandle];
     UdpNmEnterCritical();
     context->Flags &= ~UDPNM_DISABLE_COMMUNICATION_REQUEST_MASK;
-    UdpNmEnterCritical();
+    UdpNmExitCritical();
     UdpNmSetAlarm(Tx, 0);                            /* @SWS_UdpNm_00178 */
     UdpNmSetAlarm(NmTimeout, config->NmTimeoutTime); /* @SWS_UdpNm_00179 */
 #ifdef UDPNM_REMOTE_SLEEP_IND_ENABLED
@@ -620,16 +620,21 @@ void UdpNm_SoAdIfRxIndication(PduIdType rxPduId, const PduInfoType *pduInfoPtr) 
   const UdpNm_ChannelConfigType *config;
   uint8_t flags = UDPNM_RX_INDICATION_REQUEST_MASK | UDPNM_NM_PDU_RECEIVED_MASK;
   Std_ReturnType ret = E_NOT_OK;
-  if (rxPduId < UDPNM_CONFIG->NumOfChannels) {
-    context = &UDPNM_CONFIG->ChannelContexts[rxPduId];
-    config = &UDPNM_CONFIG->ChannelConfigs[rxPduId];
+  if ((NULL != pduInfoPtr) && (NULL != pduInfoPtr->SduDataPtr) &&
+      (pduInfoPtr->SduLength >= UDPNM_PDU_LENGTH)) {
+    if (rxPduId < UDPNM_CONFIG->NumOfChannels) {
+      context = &UDPNM_CONFIG->ChannelContexts[rxPduId];
+      config = &UDPNM_CONFIG->ChannelConfigs[rxPduId];
 #ifdef UDPNM_GLOBAL_PN_SUPPORT
-    ret = UdpNm_RxFilter(context, config, pduInfoPtr);
+      ret = UdpNm_RxFilter(context, config, pduInfoPtr);
 #else
-    ret = E_OK;
+      ret = E_OK;
 #endif
+    } else {
+      ASLOG(ERROR, ("UdpNm_RxIndication with invalid RxPduId %d\n", rxPduId));
+    }
   } else {
-    ASLOG(ERROR, ("UdpNm_RxIndication with invalid RxPduId %d\n", rxPduId));
+    ASLOG(ERROR, ("UdpNm_RxIndication with invalid PduInfo\n"));
   }
   if (E_OK == ret) {
     /* @SWS_UdpNm_00035 */
@@ -880,7 +885,7 @@ Std_ReturnType UdpNm_SetSleepReadyBit(NetworkHandleType nmChannelHandle, boolean
     } else {
       ret = E_NOT_OK;
     }
-    UdpNmEnterCritical();
+    UdpNmExitCritical();
     if (E_OK == ret) {
       UdpNm_SendMessage(context, config, 0);
     }

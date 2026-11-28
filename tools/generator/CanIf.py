@@ -254,12 +254,12 @@ def extract(cfg, dir):
         network["TxPdus"].sort(key=lambda x: toNum(x["Id"]) & 0x1FFFFFFF)
         for pdu in network["RxPdus"]:
             hh = pdu.get("Hoh", hrh)
-            if hh < hrh or hh > (hrh + NumHrh):
+            if hh < hrh or hh > (hrh + NumHrh - 1):
                 raise Exception("Invalid hoh for: %s" % (pdu))
             pdu["Hoh"] = hh
         for pdu in network["TxPdus"]:
             hh = pdu.get("Hoh", hth)
-            if hh < hth or hh > (hth + NumHth):
+            if hh < hth or hh > (hth + NumHth - 1):
                 raise Exception("Invalid hoh for: %s" % (pdu))
             pdu["Hoh"] = hh
         hrh += NumHrh

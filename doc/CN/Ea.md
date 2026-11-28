@@ -65,16 +65,17 @@ typedef struct {
 ```mermaid
 flowchart TD
     A["Ea_Write(BlockNumber, data)"] --> B["job = WRITE，step = ERASE"]
-    B --> C["Eep_Erase(BlockAddress, BlockSize)"]
+    B --> C["Eep_Erase(BlockAddress, EA_ALIGNED(BlockSize))"]
     C -->|完成| D["step = WRITE"]
-    D --> E["Eep_Write(BlockAddress, data)"]
+    D --> E["Eep_Write(BlockAddress, data，整块 BlockSize)"]
     E -->|完成| F["JobEndNotification -> NvM"]
     G["Ea_Read(BlockNumber, offset, dst, len)"] --> H["job = READ"]
     H --> I["Eep_Read(BlockAddress + offset, dst, len)"]
     I -->|完成| F
 ```
 
-一次一个作业；`Ea_Cancel()` 中止当前作业并向 NvM 报错。
+一次一个作业；`Ea_Cancel()` 中止当前作业（Eep 报错后 Ea 不再重试，直接向 NvM
+上报失败）。Eep 报错时 Ea 会先重试一次，再失败才向 NvM 报错。
 
 ---
 
@@ -85,8 +86,8 @@ flowchart TD
 | `Ea_Init(ConfigPtr)` | 注册作业回调 |
 | `Ea_Read(BlockNumber, offset, dst, len)` | 异步读作业 |
 | `Ea_Write(BlockNumber, src)` | 异步擦除+写作业 |
-| `Ea_InvalidateBlock` / `Ea_EraseImmediateBlock(BlockNumber)` | 擦除辅助 |
-| `Ea_Cancel()` / `Ea_SetMode(Mode)` | 作业控制 |
+| `Ea_InvalidateBlock` / `Ea_EraseImmediateBlock(BlockNumber)` | 固定返回 `E_NOT_OK`（不支持） |
+| `Ea_Cancel()` / `Ea_SetMode(Mode)` | 取消作业 / 转发给 `Eep_SetMode` |
 | `Ea_JobEndNotification` / `Ea_JobErrorNotification()` | Eep 回调 |
 | `Ea_MainFunction()` | 作业执行 |
 | `Ea_GetVersionInfo` | 版本 |
@@ -107,9 +108,10 @@ flowchart TD
 
 ## 6. 已知局限
 
-1. **块没有冗余** - 写失败会让块变空/变脏；NvM 的 CRC 能检测，但 Ea 不重试。
+1. **块没有冗余** - 重试一次仍失败的写会让块变空/变脏；NvM 的 CRC 能检测。
 2. **没有磨损均衡** - 设计如此（固定映射）。
-3. **`Ea_SetMode` 无效果**（没有 FAST/SLOW 处理）。
+3. **`Ea_SetMode` 只是转发给 `Eep_SetMode()`** - Eep（Fls 别名实现）会按
+   FAST/SLOW 模式调整每次主函数处理的块大小。
 4. **没有 immediate-data 特殊处理**（配置类型里 `ImmediateData` 被注释掉了）。
 
 **相关文档：** [NvM](NvM.md) - [Fee](Fee.md)

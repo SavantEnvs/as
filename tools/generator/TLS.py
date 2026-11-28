@@ -150,7 +150,6 @@ def Gen_TLS(cfg, dir):
                 C.write("    sizeof(TLS_%s_ServerCerts),\n" % (srv["Name"]))
                 C.write("    sizeof(TLS_%s_CasCerts),\n" % (srv["Name"]))
                 C.write("    sizeof(TLS_%s_ServerKey),\n" % (srv["Name"]))
-                C.write("    %su, /* MaxSize */\n" % (srv.get("MaxSize", 512)))
                 C.write("    SOAD_SOCKID_%s, /* SoConId */\n" % (srv["SoConId"]))
                 C.write("    SOAD_TX_PID_%s, /* TxPduId */\n" % (srv["SoConId"]))
                 C.write("    %s, /* RxPduId */\n" % (srv["RxPduId"]))

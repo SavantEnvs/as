@@ -499,7 +499,11 @@ static Std_ReturnType DoIP_HandleRoutineActivation(PduIdType rxPduId, DoIP_MsgTy
     if (E_OK == ret) {
       connection->Context->Ramgr.Tester = tester;
       connection->Context->Ramgr.Raid = raid;
-      memcpy(connection->Context->Ramgr.OEM, &msg->Req[7], 4);
+      if (11u == msg->PayloadLength) {
+        memcpy(connection->Context->Ramgr.OEM, &msg->Req[7], 4);
+      } else {
+        memset(connection->Context->Ramgr.OEM, 0, sizeof(connection->Context->Ramgr.OEM));
+      }
       connection->Context->Ramgr.State = DOIP_RA_SOCKET_HANDLER;
       ret = DoIP_RoutingActivationManager(connection, msg, &resCode);
     }
@@ -702,7 +706,8 @@ static Std_ReturnType DoIP_HandleDiagnosticMessage(PduIdType rxPduId, DoIP_MsgTy
   const DoIP_TesterConnectionType *connection =
     &config->TesterConnections[config->RxPduIdToConnectionMap[rxPduId]];
   const DoIP_TargetAddressType *TargetAddressRef;
-  uint16_t sa, ta;
+  uint16_t sa = 0u;
+  uint16_t ta = 0u;
   uint8_t resCode = 0xFFu;
   BufReq_ReturnType bufReq;
   PduInfoType pduInfo;
@@ -721,11 +726,15 @@ static Std_ReturnType DoIP_HandleDiagnosticMessage(PduIdType rxPduId, DoIP_MsgTy
   }
 
   if (E_OK == ret) {
-    DoIP_RememberDiagMsg(connection, msg);
     if ((0u == connection->Context->RAMask) || (NULL == connection->Context->TesterRef)) {
       resCode = DOIP_DIAG_INVALID_SA; /* @SWS_DoIP_00123 */
       ASLOG(DOIPE, ("not activated\n"));
+      /* echo back the request sa/ta in the negative ack */
+      sa = ((uint16_t)msg->Req[0] << 8) + msg->Req[1];
+      ta = ((uint16_t)msg->Req[2] << 8) + msg->Req[3];
       ret = DOIP_E_NOT_OK;
+    } else {
+      DoIP_RememberDiagMsg(connection, msg);
     }
   }
 
@@ -780,6 +789,8 @@ static Std_ReturnType DoIP_HandleDiagnosticMessage(PduIdType rxPduId, DoIP_MsgTy
     } else {
       TargetAddressRef = connection->Context->Msg.TargetAddressRef;
       asAssert(TargetAddressRef != NULL);
+      sa = connection->Context->TesterRef->TesterSA;
+      ta = TargetAddressRef->TargetAddress;
       pduInfo.SduDataPtr = (uint8_t *)msg->Req;
       pduInfo.SduLength = msg->ReqLen;
       bufReq = PduR_DoIPCopyRxData(TargetAddressRef->RxPduId, &pduInfo, &bufferSize);
@@ -847,10 +858,13 @@ static Std_ReturnType DoIP_HandleAliveCheckResponse(PduIdType rxPduId, DoIP_MsgT
 
   if (2 == msg->PayloadLength) {
     sa = ((uint16_t)msg->Req[0] << 8) + msg->Req[1];
-    if (sa != connection->Context->TesterRef->TesterSA) {
+    if ((NULL == connection->Context->TesterRef) ||
+        (sa != connection->Context->TesterRef->TesterSA)) {
       /* @SWS_DoIP_00141 */
-      ASLOG(DOIPE, ("sa %X not right, expected %X, close it\n", sa,
-                    connection->Context->TesterRef->TesterSA));
+      ASLOG(
+        DOIPE,
+        ("sa %X not right, expected %X, close it\n", sa,
+         (NULL != connection->Context->TesterRef) ? connection->Context->TesterRef->TesterSA : 0u));
       ret = DOIP_E_NOT_OK_SILENT;
       connection->Context->InactivityTimer = 1; /* close it the next MainFunction */
     } else {

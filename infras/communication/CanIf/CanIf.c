@@ -346,7 +346,7 @@ Std_ReturnType CanIf_GetPduMode(uint8_t controllerId, CanIf_PduModeType *pduMode
                return E_NOT_OK);
 
   /* @SWS_CANIF_00657 */
-  DET_VALIDATE(NULL == pduModePtr, 0x0A, CANIF_E_PARAM_POINTER, return E_NOT_OK);
+  DET_VALIDATE(NULL != pduModePtr, 0x0A, CANIF_E_PARAM_POINTER, return E_NOT_OK);
 
   *pduModePtr = CANIF_CONFIG->CtrlContexts[controllerId].PduMode;
 
@@ -500,7 +500,7 @@ void CanIf_MainFunction_Fast(void) {
   ExitCritical();
 #endif
 
-#if CANIF_RX_PACKET_POOL_SIZE > 0
+#if CANIF_TX_PACKET_POOL_SIZE > 0
   EnterCritical();
   txPacket = STAILQ_FIRST(&canIfTxPackets);
   while (NULL != txPacket) {
@@ -510,13 +510,13 @@ void CanIf_MainFunction_Fast(void) {
     pduInfo.SduLength = txPacket->SduLength;
     pduInfo.MetaDataPtr = NULL;
     ret = CanIf_TransmitInternal(txPacket->TxPduId, &pduInfo);
-    if (E_OK == ret) {
-      mp_free(&canIfTxPacketPool, (uint8_t *)txPacket);
-    }
     InterEnterCritical();
     if (E_OK == ret) {
+      mp_free(&canIfTxPacketPool, (uint8_t *)txPacket);
       txPacket = STAILQ_FIRST(&canIfTxPackets);
     } else {
+      /* keep the packet for the next main function round */
+      STAILQ_INSERT_HEAD(&canIfTxPackets, txPacket, entry);
       break;
     }
   }

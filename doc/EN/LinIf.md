@@ -32,7 +32,7 @@ comments: true
 6. [Build and run a demo](#6-build-and-run-a-demo)
 7. [Key notes and gotchas](#7-key-notes-and-gotchas)
 8. [Troubleshooting](#8-troubleshooting)
-9. [Known limitations and code review findings](#9-known-limitations-and-code-review-findings)
+9. [Known limitations](#9-known-limitations)
 10. [Related documents](#10-related-documents)
 
 ---
@@ -285,7 +285,7 @@ sequenceDiagram
 | `LinIf_GetVersionInfo(info)` | both | 4.0.2 |
 
 `LinIf_Transmit` and `LinIf_LinErrorIndication` are declared in `LinIf.h` but
-**not implemented** (see section 9).
+**not implemented**.
 
 ### Scheduling
 
@@ -369,9 +369,7 @@ networks, `SchedMode: INTERRUPT`).
 
 ---
 
-## 9. Known limitations and code review findings
-
-### 9.1 Functional limitations
+## 9. Known limitations
 
 * **No `LinIf_Transmit`.** Declared in `LinIf.h` but not implemented - in this
   architecture PDUs are always scheduled (master) or header-triggered (slave);
@@ -388,23 +386,6 @@ networks, `SchedMode: INTERRUPT`).
   (`curSch = numOfEntries - 1`, then `curSch++` wraps to 0) so the first entry
   runs immediately - correct but subtle; release note 4.0.1 documents the
   related wakeup fix.
-
-### 9.2 Code review findings
-
-| # | Where | Finding |
-| --- | --- | --- |
-| 1 | `LinIf.c:435` | `LinIf_HeaderIndication` computes `h = numOfEntries - 1` on a `uint16_t`: an **empty slave table** (a slave node with zero PDUs, possible after LDF import) underflows to 65535 and the binary search then reads out of bounds. Guarded only by the fact that the generator always creates at least the diagnostic PDUs. |
-| 2 | `LinIf.c:89-102` | In POLLING mode `Lin_GetStatus` returns the RX buffer pointer, and the 8-byte log dump reads `SduPtr[0..7]` **unconditionally** - a frame with `Dl < 8` causes an over-read of the driver buffer (same pattern as the CanIf log bug). |
-| 3 | `LinIf.c:543` | `memcpy(context->frame.SduPtr, Lin_SduPtr, entry->dlc)` copies `entry->dlc` bytes without the driver reporting how many were actually received; a slave answering with a different DLC would corrupt the buffer or over-read. |
-| 4 | `LinIf.c:38-75` | `LinIf_ScheduleEntry` treats a failed `TriggerTransmit` (`FAIL to provide Tx buffer`) as a hard `E_NOT_OK` for that entry but **does not advance or skip** - the same entry is retried after `timer` expires via the master-timeout path, without any retry counter. A permanently unresponsive Com/LinTp stalls the whole schedule table (entries after it never run). |
-| 5 | `LinIf.c:111-121` | Mirror reporting in `LinIf_CheckEntry` runs for **any** final status including `LIN_TX_ERROR` / `RX_NO_RESPONSE`, but reports `context->data` - for an RX-no-response the buffer holds stale data, so the mirror shows garbage bytes for failed frames. |
-| 6 | `LinIf.c:17-18` | `AS_LOG_LINIFE` (error channel) defaults to **0**, i.e. all LinIf errors are invisible unless `AS_LOG_LINIF`/`AS_LOG_LINIFE` is set via the environment. Most "my LIN does not work" cases produce no output at all by default. |
-| 7 | `LinIf.c:246-259` | `LinIf_Init` uses `int i` against `numOfChannels` (uint16) - harmless, but inconsistent with the rest of the codebase. |
-| 8 | `LinIf.py:112-121` | The schedule entry's `Drc` is derived from the PDU **name suffix** (`name[-2:]`), not from the `RxPdus`/`TxPdus` list membership. A PDU named `FOO_TX` placed in `RxPdus` silently generates a TX-entry callback that calls `Com_TriggerTransmit` on an RX Com PDU symbol - generation succeeds, runtime misbehaves. |
-| 9 | `LinIf.py:82-87` | `LINIF_DELAY_UINT` silently differs between `_WIN32` (10) and targets (1); the same JSON produces different absolute timings on both. Not documented in the generated header. |
-| 10 | `LinIf.py:388-389` | `extract()` sorts PDUs by `toNum(id) & 0x1FFFFFFF` *after* generating, but `ScheduleTables` entries reference PDUs by name - a master table whose entries were written in LDF order is not re-sorted, so the binary-search assumption (sorted table) only holds for the implicit slave table. |
-
----
 
 ## 10. Related documents
 

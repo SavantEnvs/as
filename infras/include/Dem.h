@@ -197,6 +197,13 @@ Std_ReturnType Dem_GetNextFilteredRecord(uint8_t ClientId, uint32_t *DTC, uint8_
 Std_ReturnType Dem_GetDTCByOccurrenceTime(uint8_t ClientId, Dem_DTCRequestType DTCRequest,
                                           uint32_t *DTC);
 
+/* internal extension of @SWS_Dem_00218 for Dcm 0x19 0x0B-0x0E: also returns
+ * the current UDS status of the reported DTC. Returns DEM_NO_SUCH_ELEMENT when
+ * the mapped queue is empty and E_NOT_OK when the occurrence-order tracking is
+ * not enabled, see doc/EN/Dem.md 3.7 */
+Std_ReturnType Dem_GetDTCAndStatusByOccurrenceTime(uint8_t ClientId, Dem_DTCRequestType DTCRequest,
+                                                   uint32_t *DTC, Dem_UdsStatusByteType *DTCStatus);
+
 /* @SWS_Dem_91016 */
 Std_ReturnType Dem_SelectDTC(uint8_t ClientId, uint32_t DTC, Dem_DTCFormatType DTCFormat,
                              Dem_DTCOriginType DTCOrigin);

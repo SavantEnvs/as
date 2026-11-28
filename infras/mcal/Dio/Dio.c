@@ -26,7 +26,6 @@ extern const Dio_ConfigType Dio_Config;
 /* ================================ [ FUNCTIONS ] ============================================== */
 void Dio_WriteChannel(Dio_ChannelType channelId, Dio_LevelType level) {
   DET_VALIDATE(channelId < DIO_CONFIG->numOfChannels, 0x01, DIO_E_PARAM_INVALID_CHANNEL_ID, return);
-  DET_VALIDATE((STD_LOW == level) || (STD_HIGH == level), 0x01, DIO_E_PARAM_POINTER, return);
   DioAc_WriteChannel(channelId, &DIO_CONFIG->channels[channelId], level);
 }
 

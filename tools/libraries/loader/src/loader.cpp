@@ -315,13 +315,39 @@ void Loader_SetLogLevel(Loader_Type *loader, int level) {
   loader->LogLevel = level;
 }
 
+/* append to the log buffer safely: clamp on truncation to avoid LogSize
+ * running past the buffer end (which would underflow the remaining size) */
+static void Loader_LogVAppend(Loader_Type *loader, const char *fmt, va_list args) {
+  int r;
+  size_t size;
+  if (loader->LogSize >= (sizeof(loader->Logs) - 1)) {
+    return; /* log buffer full */
+  }
+  size = sizeof(loader->Logs) - loader->LogSize;
+  r = vsnprintf(&loader->Logs[loader->LogSize], size, fmt, args);
+  if (r < 0) {
+    return;
+  }
+  if ((size_t)r >= size) {
+    loader->LogSize = sizeof(loader->Logs) - 1;
+  } else {
+    loader->LogSize += r;
+  }
+}
+
+static void Loader_LogAppend(Loader_Type *loader, const char *fmt, ...) {
+  va_list args;
+  va_start(args, fmt);
+  Loader_LogVAppend(loader, fmt, args);
+  va_end(args);
+}
+
 void Loader_Log(Loader_Type *loader, int level, const char *fmt, ...) {
   va_list args;
   if ((level) >= loader->LogLevel) {
     std::lock_guard<std::mutex> lg(loader->LogMutex);
     va_start(args, fmt);
-    loader->LogSize +=
-      vsnprintf(&loader->Logs[loader->LogSize], sizeof(loader->Logs) - loader->LogSize, fmt, args);
+    Loader_LogVAppend(loader, fmt, args);
     va_end(args);
   }
 }
@@ -331,14 +357,11 @@ void Loader_LogHex(Loader_Type *loader, int level, const char *prefix, const uin
   size_t i;
   if (level >= loader->LogLevel) {
     std::lock_guard<std::mutex> lg(loader->LogMutex);
-    loader->LogSize +=
-      snprintf(&loader->Logs[loader->LogSize], sizeof(loader->Logs) - loader->LogSize, prefix);
+    Loader_LogAppend(loader, "%s", prefix);
     for (i = 0; (i < len) && (i < (size_t)16); i++) {
-      loader->LogSize += snprintf(&loader->Logs[loader->LogSize],
-                                  sizeof(loader->Logs) - loader->LogSize, " %02X", data[i]);
+      Loader_LogAppend(loader, " %02X", data[i]);
     }
-    loader->LogSize +=
-      snprintf(&loader->Logs[loader->LogSize], sizeof(loader->Logs) - loader->LogSize, "\n");
+    Loader_LogAppend(loader, "\n");
   }
 }
 

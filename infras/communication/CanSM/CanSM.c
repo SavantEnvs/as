@@ -494,7 +494,7 @@ void CanSM_DeInit(void) {
   for (i = 0; i < CANSM_CONFIG->NumOfNetworks; i++) {
     context = &CANSM_CONFIG->Contexts[i];
     /* @SWS_CanSM_00660 */
-    DET_VALIDATE(CANSM_BSM_S_NOCOM != context->BusState, 0x14, CANSM_E_NOT_IN_NO_COM, (void)0);
+    DET_VALIDATE(CANSM_BSM_S_NOCOM == context->BusState, 0x14, CANSM_E_NOT_IN_NO_COM, return);
     context->BusState = CANSM_BSM_S_NOT_INITIALIZED;
   }
 }

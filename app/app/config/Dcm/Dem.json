@@ -1,5 +1,7 @@
 {
   "Class": "Dem",
+  "UseFailedDtcOrderQueue": true,
+  "UseConfirmedDtcOrderQueue": true,
   "Memories": [
     {
       "Name": "Primary",

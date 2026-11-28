@@ -400,6 +400,26 @@ Multi-line macro bodies use `do { ... } while (0)` with `\` continuations — a 
   } while (0)
 ```
 
+### 4.1 Line Endings
+
+**All text files use LF (`\n`) — never CRLF (`\r\n`) and never a bare CR (`\r`).** This applies to every text file: source, scripts, configuration, documentation and JSON — not only the C/C++ files clang-format touches.
+
+Why:
+
+- The project builds and runs on Linux/Unix, where LF is the native newline. CRLF makes shell scripts fail with `$'\r': command not found` and causes hard-to-diagnose errors in Makefiles and config parsing.
+- git stores text as LF internally. With `core.autocrlf=true`, files are checked out as CRLF and converted back on commit, so `git diff` shows whole-file "changes" (CRLF/LF churn) that pollute history and hide the real logic changes.
+- With LF everywhere, a file has identical bytes on Windows, Linux and CI, keeping cross-platform diffs clean.
+
+On Windows, configure it like this:
+
+```bash
+git config core.autocrlf input    # keep LF in the worktree, no conversion on commit (recommended)
+# or
+git config core.autocrlf false    # no conversion at all
+```
+
+Also set the editor to save with LF (VS Code: `"files.eol": "\n"`). Do not use `autocrlf=true`, which rewrites the worktree to CRLF.
+
 ---
 
 ## 5. Preprocessor
@@ -510,6 +530,6 @@ Logging uses `ASLOG` from `Std_Debug.h`. Each module defines its own channel mac
 
 ---
 
-**Version**: 1.6
+**Version**: 1.7
 **Date**: November 2026
 **Based on**: SSAS codebase patterns, repo-root `.clang-format`, `tools/format.py`

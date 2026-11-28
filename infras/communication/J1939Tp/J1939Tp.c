@@ -56,7 +56,7 @@
 
 #define FD_DT_DATA_SIZE (config->LinkLayerDataLength - 4u)
 #define J1939TpNumFdDtPackets(s) (((s) + FD_DT_DATA_SIZE - 1u) / FD_DT_DATA_SIZE)
-#define NUM_OF_FD_DT_PACKETS J1939TpNumFdDtPackets(config->Context->TpSduLength)
+#define J1939TP_NUM_OF_FD_DT_PACKETS J1939TpNumFdDtPackets(config->Context->TpSduLength)
 
 /* System resources were needed for another task so this connection managed session was terminated.
  */
@@ -198,9 +198,9 @@ static void J1939Tp_StartToSend_CMDT(PduIdType txPduId) {
     data[2] = (config->Context->TpSduLength >> 8) & 0xFFu;
     data[3] = (config->Context->TpSduLength >> 16) & 0xFFu;
 
-    data[4] = NUM_OF_FD_DT_PACKETS & 0xFFu;
-    data[5] = (NUM_OF_FD_DT_PACKETS >> 8) & 0xFFu;
-    data[6] = (NUM_OF_FD_DT_PACKETS >> 16) & 0xFFu;
+    data[4] = J1939TP_NUM_OF_FD_DT_PACKETS & 0xFFu;
+    data[5] = (J1939TP_NUM_OF_FD_DT_PACKETS >> 8) & 0xFFu;
+    data[6] = (J1939TP_NUM_OF_FD_DT_PACKETS >> 16) & 0xFFu;
 
     data[7] = config->TxMaxPacketsPerBlock;
 
@@ -335,9 +335,9 @@ static void J1939Tp_SendEOMS(PduIdType txPduId) {
   data[2] = (config->Context->TpSduLength >> 8) & 0xFFu;
   data[3] = (config->Context->TpSduLength >> 16) & 0xFFu;
 
-  data[4] = NUM_OF_FD_DT_PACKETS & 0xFFu;
-  data[5] = (NUM_OF_FD_DT_PACKETS >> 8) & 0xFFu;
-  data[6] = (NUM_OF_FD_DT_PACKETS >> 16) & 0xFFu;
+  data[4] = J1939TP_NUM_OF_FD_DT_PACKETS & 0xFFu;
+  data[5] = (J1939TP_NUM_OF_FD_DT_PACKETS >> 8) & 0xFFu;
+  data[6] = (J1939TP_NUM_OF_FD_DT_PACKETS >> 16) & 0xFFu;
 
   data[7] = 0u; /* TODO: AD Size */
 
@@ -378,9 +378,9 @@ static void J1939Tp_StartToSend_BAM(PduIdType txPduId) {
     data[2] = (config->Context->TpSduLength >> 8) & 0xFFu;
     data[3] = (config->Context->TpSduLength >> 16) & 0xFFu;
 
-    data[4] = NUM_OF_FD_DT_PACKETS & 0xFFu;
-    data[5] = (NUM_OF_FD_DT_PACKETS >> 8) & 0xFFu;
-    data[6] = (NUM_OF_FD_DT_PACKETS >> 16) & 0xFFu;
+    data[4] = J1939TP_NUM_OF_FD_DT_PACKETS & 0xFFu;
+    data[5] = (J1939TP_NUM_OF_FD_DT_PACKETS >> 8) & 0xFFu;
+    data[6] = (J1939TP_NUM_OF_FD_DT_PACKETS >> 16) & 0xFFu;
 
     data[7] = 0xFFu;
 
@@ -552,7 +552,7 @@ static void J1939Tp_RxSendCmCTS(PduIdType channel) {
   uint8_t numOfPackets;
 
   if (J1939TpIsFd(config)) {
-    numOfPackets = NUM_OF_FD_DT_PACKETS - config->Context->NextSN;
+    numOfPackets = J1939TP_NUM_OF_FD_DT_PACKETS - config->Context->NextSN;
   } else {
     numOfPackets = J1939TP_NUM_OF_DT_PACKETS - config->Context->NextSN;
   }
@@ -632,9 +632,9 @@ static void J1939Tp_RxSendCmEOMA(PduIdType channel) {
       data[2] = (config->Context->TpSduLength >> 8) & 0xFFu;
       data[3] = (config->Context->TpSduLength >> 16) & 0xFFu;
 
-      data[4] = NUM_OF_FD_DT_PACKETS & 0xFFu;
-      data[5] = (NUM_OF_FD_DT_PACKETS >> 8) & 0xFFu;
-      data[6] = (NUM_OF_FD_DT_PACKETS >> 16) & 0xFFu;
+      data[4] = J1939TP_NUM_OF_FD_DT_PACKETS & 0xFFu;
+      data[5] = (J1939TP_NUM_OF_FD_DT_PACKETS >> 8) & 0xFFu;
+      data[6] = (J1939TP_NUM_OF_FD_DT_PACKETS >> 16) & 0xFFu;
       data[7] = 0xFFu;
       data[8] = 0xFFu;
       data[9] = config->Context->PgPGN & 0xFFu;
@@ -661,7 +661,7 @@ static void J1939Tp_RxSendCmEOMA(PduIdType channel) {
       config->Context->State = J1939TP_WAIT_CM_EOMA_TX_COMPLETED;
       config->Context->Timer = config->Tr;
     } else {
-      config->Context->State = J1939TP_RESEND_CM_EOMS;
+      config->Context->State = J1939TP_RESEND_CM_EMOA;
       config->Context->Timer = config->Tr;
     }
   } else {
@@ -672,7 +672,7 @@ static void J1939Tp_RxSendCmEOMA(PduIdType channel) {
 static void J1939Tp_HandleDT_TxConfirmation_TxChannel(PduIdType channel, Std_ReturnType result) {
   const J1939Tp_TxChannelType *config = &J1939TP_CONFIG->TxChannels[channel];
   if (E_OK == result) {
-    if ((J1939TpIsFd(config) && ((config->Context->NextSN + 1u) < NUM_OF_FD_DT_PACKETS)) ||
+    if ((J1939TpIsFd(config) && ((config->Context->NextSN + 1u) < J1939TP_NUM_OF_FD_DT_PACKETS)) ||
         ((config->Context->NextSN + 1u) < J1939TP_NUM_OF_DT_PACKETS)) {
       config->Context->NextSN++;
       if (J1939TP_PROTOCOL_CMDT == config->TxProtocol) {
@@ -777,10 +777,10 @@ static void J1939Tp_HandleCM_CTS(PduIdType channel, const PduInfoType *pduInfoPt
       NextSN = pduInfoPtr->SduDataPtr[4] + ((uint32_t)pduInfoPtr->SduDataPtr[5] << 8) +
                ((uint32_t)pduInfoPtr->SduDataPtr[6] << 16);
       NumPacketsToSend = pduInfoPtr->SduDataPtr[7];
-      RequestField = pduInfoPtr->SduDataPtr[9];
+      RequestField = pduInfoPtr->SduDataPtr[8];
       PgPGN = pduInfoPtr->SduDataPtr[9] + ((uint32_t)pduInfoPtr->SduDataPtr[10] << 8) +
               ((uint32_t)pduInfoPtr->SduDataPtr[11] << 16);
-      numOfDtPackets = J1939TP_NUM_OF_DT_PACKETS;
+      numOfDtPackets = J1939TP_NUM_OF_FD_DT_PACKETS;
       ret = E_OK;
     }
   } else {
@@ -790,7 +790,7 @@ static void J1939Tp_HandleCM_CTS(PduIdType channel, const PduInfoType *pduInfoPt
       NextSN = pduInfoPtr->SduDataPtr[2];
       PgPGN = pduInfoPtr->SduDataPtr[5] + ((uint32_t)pduInfoPtr->SduDataPtr[6] << 8) +
               ((uint32_t)pduInfoPtr->SduDataPtr[7] << 16);
-      numOfDtPackets = NUM_OF_FD_DT_PACKETS;
+      numOfDtPackets = J1939TP_NUM_OF_DT_PACKETS;
       ret = E_OK;
     }
   }
@@ -834,7 +834,7 @@ static void J1939Tp_HandleCM_EOMA(PduIdType channel, const PduInfoType *pduInfoP
         totalNumPackets = pduInfoPtr->SduDataPtr[4] + ((uint32_t)pduInfoPtr->SduDataPtr[5] << 8) +
                           ((uint32_t)pduInfoPtr->SduDataPtr[6] << 16);
         if ((totalMsgSize == config->Context->TpSduLength) &&
-            (totalNumPackets == NUM_OF_FD_DT_PACKETS)) {
+            (totalNumPackets == J1939TP_NUM_OF_FD_DT_PACKETS)) {
           J1939Tp_TxResetToIdle(config);
           PduR_J1939TpTxConfirmation(config->PduR_TxPduId, E_OK);
         } else {
@@ -1056,7 +1056,7 @@ static void J1939Tp_RxIndication_RxChannel_CM_EOMS(PduIdType channel,
       ADType = pduInfoPtr->SduDataPtr[8];
       if ((ADSize + 12u) == pduInfoPtr->SduLength) {
         if ((totalMsgSize == config->Context->TpSduLength) &&
-            (totalNumPackets == J1939TP_NUM_OF_DT_PACKETS)) {
+            (totalNumPackets == J1939TP_NUM_OF_FD_DT_PACKETS)) {
           if ((0u == ADType) && (0u == ADSize)) { /* No assurance data (default) */
             PduR_J1939TpRxIndication(config->PduR_RxPduId, E_OK);
             J1939Tp_RxSendCmEOMA(channel);
@@ -1157,7 +1157,7 @@ static void J1939Tp_RxIndication_RxChannel_DT(PduIdType channel, const PduInfoTy
       PduInfo.MetaDataPtr = (uint8_t *)&offset;
       bufReq = PduR_J1939TpCopyRxData(config->PduR_RxPduId, &PduInfo, &bufferSize);
       if (BUFREQ_OK == bufReq) {
-        if (J1939TpIsFd(config) && (config->Context->NextSN >= NUM_OF_FD_DT_PACKETS)) {
+        if (J1939TpIsFd(config) && (config->Context->NextSN >= J1939TP_NUM_OF_FD_DT_PACKETS)) {
           config->Context->State = J1939TP_WAIT_CM_EOMS_RX;
           config->Context->Timer = config->T1;
         } else if (config->Context->NextSN >= J1939TP_NUM_OF_DT_PACKETS) {

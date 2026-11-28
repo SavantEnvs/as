@@ -31,7 +31,7 @@ comments: true
 6. [构建与运行示例](#6-构建与运行示例)
 7. [关键注意事项](#7-关键注意事项)
 8. [问题排查](#8-问题排查)
-9. [已知限制与代码评审发现](#9-已知限制与代码评审发现)
+9. [已知限制](#9-已知限制)
 10. [相关文档](#10-相关文档)
 
 ---
@@ -148,7 +148,7 @@ flowchart TB
 | --- | --- | --- |
 | `MacGen[].name = MACGEN0` | `Family: AES`、`Mode: ECB`、16 字节 `Key` | MAC 算法原语 |
 | `Jobs[].name = SECOC_MACGEN_0` | `ServiceType: MAC_GENERATE` | 被 `TxAuthServiceConfigRef` 与 `RxAuthServiceConfigRef` 同时引用 |
-| `Jobs[].name = SECOC_MACVER_0` | `ServiceType: MAC_VERIFY` | 仓库里存在但从未被使用，见第 9 节 |
+| `Jobs[].name = SECOC_MACVER_0` | `ServiceType: MAC_VERIFY` | 仓库里存在但从未被使用 |
 
 `AuthInfoLength` 必须等于密钥长度（16 字节 -> 128 比特），否则
 `Csm_MacGenerate` 在 FINISH 阶段拒绝（`Csm.c` 中的 `macLength` 校验）。
@@ -210,7 +210,7 @@ static const SecOC_TxPduProcessingType SecOC_TxPduProcs[] = {
 Std_ReturnType __weak SecOC_GetFreshness_FreshnessValue0(uint8_t *FreshnessValue,
                                                          uint32_t *FreshnessValueLength) {
   static uint16_t fvFreshnessValue0 = 0;
-  uint16_t fv = fvFreshnessValue0 / 2;          /* 注意：/2，见第 9 节 */
+  uint16_t fv = fvFreshnessValue0 / 2;          /* 注意：/2（哑新鲜度生成器） */
   (void)memset(FreshnessValue, 0, *FreshnessValueLength / 8);
   FreshnessValue[0] = (fv >> 8) & 0xFFu;
   FreshnessValue[1] = fv & 0xFFu;
@@ -487,7 +487,7 @@ Data ID `0x1234` 从不出现在总线上——它只存在于 MAC 计算输入�
 | `SecOCE: [0] TxPdu update FAIL` | Csm 作业类型错误、`TxAuthServiceConfigRef` 未定义，或 `AuthInfoLength` 不等于密钥长度。检查 `GEN/Csm_Cfg.h` 中的 `CSM_JOB_<name>` |
 | `SecOCE: [0] TxPdu in state 3` | 不在 `WAIT_TX_DONE` 状态时收到 `SecOC_TxConfirmation`——通常是路由配错（确认被路由到了另一个 PDU id） |
 | 每帧都 `SecOCE: [0] RxPdu verify FAIL` | `DataId` 不一致、两端 Csm 密钥不同，或两节点新鲜度值失步 |
-| `verify PASS` 与 `verify FAIL` 交替出现 | 两节点新鲜度值漂移——见第 9 节哑生成器的 `/2` 问题 |
+| `verify PASS` 与 `verify FAIL` 交替出现 | 哑新鲜度生成器（`GetFreshness` 每两个周期 +1）不适合多节点互通，需接入真实新鲜度管理 |
 | 完全收不到，也无 SecOC 日志 | 加安全 PDU 根本没发出去：检查 `PduR.json` 是否有 `FW_<name>` 路由、`CanIf.json` 的 `Up` 是否为 `SecOC`（IF）或 `CanTp`（TP） |
 | DET 报 `SECOC_E_INVALID_PDU_SDU_ID` | PduR 路由指向了不存在的 `TxProc`/`RxProc` 索引 |
 | 链接错误 `undefined reference to SecOC_TpTransmit` | 该 API 只有声明没有实现；应走 `PduR_SecOCTransmit` |
@@ -495,9 +495,7 @@ Data ID `0x1234` 从不出现在总线上——它只存在于 MAC 计算输入�
 
 ---
 
-## 9. 已知限制与代码评审发现
-
-### 9.1 功能限制
+## 9. 已知限制
 
 * **接收端没有真正的新鲜度校验。** `SecOC_ProcRx` 调用
   `SecOC_GetTxFreshness()`（`SecOC.c:163`）获取混入 MAC 的新鲜度值，即接收端
@@ -526,25 +524,6 @@ Data ID `0x1234` 从不出现在总线上——它只存在于 MAC 计算输入�
   慢原语会阻塞整个 fast 主函数表。
 * **`SECOC_USE_PB_CONFIG` 是全有或全无的 post-build。** EcuM 传入的是
   `SecOC_Init(NULL)`，不开该宏时传入指针被完全忽略。
-
-### 9.2 代码评审发现
-
-| # | 位置 | 发现 |
-| --- | --- | --- |
-| 1 | `SecOC.c:154` | 拷贝尾部信息用的 `memcpy`，其源偏移 `dataLength` **直接取自收到的报文头**，此前只检查了 `SduLength + 2 + FV + Auth < bufLen`。恶意/损坏的帧只要头部值够大即可越界**读**，随后还会以 `SduLength = dataLength` 上报给 Com。缺少 `2 + AuthPduHeaderLength + dataLength + 9 <= SduLength` 的校验。对一个安全模块而言，这是本次评审最严重的问题。 |
-| 2 | `SecOC.c:163` | 接收验证使用 `SecOC_GetTxFreshness` 而非接收侧新鲜度管理器（见 9.1）。 |
-| 3 | `SecOC.c:305-307` | `SecOC_RxIndication` 在状态非 `IDLE` 时只打日志，随后照常覆盖缓冲区——前一帧尚在 `RECEIVED` 未处理时，新帧会静默销毁它。 |
-| 4 | `SecOC.c:256-276` | `SecOC_IfTransmit` 同样不检查状态：无法阻止新请求破坏在途的加安全 PDU。 |
-| 5 | `SecOC.c:411,422` | `SecOC_MainFunctionTx/Rx` 解引用 `SECOC_CONFIG->numTxPduProcs` 前无 `NULL` 检查，`SecOC_Init` 之前调用即为硬 fault 而非 DET 报告。 |
-| 6 | `SecOC.c:266-269` | 缓冲区大小校验失败报的是 `SECOC_E_PARAM_POINTER`，应为长度/ID 类错误码；`SecOC.c:302`、`SecOC.c:355` 同样。 |
-| 7 | `SecOC.h` | 7 个声明的 API 没有实现（`SecOC_TpTransmit`、`SecOC_TpTxConfirmation`、`SecOC_DeInit`、`SecOC_GetRxFreshness`、`SecOC_GetRxFreshnessAuthData`、`SecOC_GetTxFreshnessTruncData`、`SecOC_SPduTxConfirmation`）。有实现只有 `SecOC_GetTxFreshness`（在 `SecOC_Callout.c`）。 |
-| 8 | `SecOC.py:80,109-115` | 缓冲区大小用整除（`AuthInfoLength // 8`），而运行期用 `(x + 7) >> 3`。任何非 8 比特整数倍的长度都会使缓冲区每字段最多小 1 字节。 |
-| 9 | `SecOC.py:172-176` | `GenDummy` 新鲜度生成器除以 2 且只写 2 字节（见 9.1）。 |
-| 10 | `SecOC.py:26,30` | `MainFunctionPeriod` 只生成一个无人使用的宏；真实周期来自 `EcuM_DriverMainFastList`，对集成者有误导性。 |
-| 11 | `Csm.c:101` | `Csm_MacVerify` 要求作业的 `serviceType` 为 `CRYPTO_MAC_GENERATE`，因此 `MAC_VERIFY` 作业（`SECOC_MACVER_0`）永远无法通过该 API 使用。SecOC 靠自行比较字节绕开了该问题，这也是 verify 作业成为死配置的原因。 |
-| 12 | `SecOC_Callout.c:32` | 新鲜度 getter 校验 `*FreshnessValueLength >= FrVal->length` 后，却把调用方的长度原样传给生成函数——它可能大于配置长度，哑实现随之 `memset` 超出 FV 实际占用的字节。 |
-
----
 
 ## 10. 相关文档
 

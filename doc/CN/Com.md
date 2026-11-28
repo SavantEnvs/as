@@ -29,7 +29,6 @@ comments: true
 6. [构建与运行演示](#6-构建与运行演示)
 7. [关键注意事项](#7-关键注意事项)
 8. [故障排查](#8-故障排查)
-9. [已知局限](#9-已知局限)
 
 ---
 
@@ -321,31 +320,6 @@ AS_LOG_COM=3 ./build/nt/GCC/CanApp/CanApp.exe
 | Tester present 之后发送停止 | Dcm 0x28 禁了通信且没人恢复 | Dcm.c 中的 `Com_DcmCommunicationControl` 调用 |
 
 ---
-
-## 9. 已知局限
-
-以下是对 `infras/communication/Com/Com.c` 与 `tools/generator/Com.py` 的代码审查
-结论（已核实）：
-
-1. **四个已声明的 API 没有实现**：`Com_InvalidateSignal`、
-   `Com_InvalidateSignalGroup`、`Com_SwitchIpduTxMode`、`Com_GetStatus` 只存在于
-   `Com.h` - 一旦使用就是链接错误。
-2. **`DataInvalidAction` 是死配置**：会生成 `COM_ACTION_*` 写进信号表，但 `Com.c`
-   从不读取（只解析了 Rx 超时动作）。`InvalidNotification` 同理。
-3. **`Com.json` 中的 `Device`、`Port`、`Baudrate` 被忽略**：看似有意义，实际 CAN
-   设备在别处配置。
-4. **`Com_MainFunctionRx` 先重启定时器再执行动作**：到期时先重装定时器，回调即使
-   阻塞多个周期也能保持名义周期 - 但长回调会拖慢同一循环里后面的 IPdu（单线程
-   顺序扫描，没有逐 PDU 相位）。
-5. **`Com_TriggerIPDUSend` 把发送失败当成功**（`timer = 1` 并返回 `E_OK`）：
-   未开 `COM_USE_MAIN_FAST` 时重发发生在一个周期之后；调用方无法区分"已发"与
-   "已排队"。
-6. **`Com_CopyRxData` 无条件要求 `MetaDataPtr`**（偏移）- 只能在提供偏移的 TP 模块
-   之后使用（SecOC/CanTp 网关路径）。
-7. **生成器：`enable_*` 开关只自动生成名字**，不校验函数是否真的存在 - 回调名打错
-   也要到链接期才暴露。
-8. **生成器：LIN 网络的 Tx 被静默丢弃**（LIN 的 `COM_TX_FOR_*` 宏生成的是空体）；
-   LIN 发送依赖 LinIf 的触发发送。
 
 **相关文档：** [PduR](PduR.md) - [CanIf](CanIf.md) - [E2E](E2E.md) -
 [ComM](ComM.md) - [SecOC](SecOC.md) - [Dcm](Dcm.md)

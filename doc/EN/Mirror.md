@@ -33,7 +33,7 @@ comments: true
 6. [Build and run a demo](#6-build-and-run-a-demo)
 7. [Key notes and gotchas](#7-key-notes-and-gotchas)
 8. [Troubleshooting](#8-troubleshooting)
-9. [Known limitations and code review findings](#9-known-limitations-and-code-review-findings)
+9. [Known limitations](#9-known-limitations)
 10. [Related documents](#10-related-documents)
 
 ---
@@ -155,7 +155,7 @@ lookup maps and `Mirror_ComChannelMaps` (used by ComM integration and
 ```mermaid
 flowchart TB
     R["Mirror_ReportCanFrame(controllerId, canId, ...)"] --> Map{"controllerId in<br/>CanCtrlIdToNetworkMaps?"}
-    Map -->|"MIRROR_INVALID_NETWORK"| Drop0["dropped<br/>(no DET, see section 9)"]
+    Map -->|"MIRROR_INVALID_NETWORK"| Drop0["dropped<br/>(no DET)"]
     Map -->|network| Active{"dest network active<br/>and source started?"}
     Active -->|"no"| Drop1["dropped (logged)"]
     Active -->|"yes"| F{"any active filter<br/>matches canId?"}
@@ -312,9 +312,7 @@ byte selects one of the 9 operations listed in
 
 ---
 
-## 9. Known limitations and code review findings
-
-### 9.1 Functional limitations
+## 9. Known limitations
 
 * **No MirrorOverEthernet statemachine of the full spec** - the module implements
   the frame/state reporting and the two destination types, but there is no
@@ -327,23 +325,6 @@ byte selects one of the 9 operations listed in
 * **No overflow statistics** on the CAN destination ring.
 * **Timestamps only exist on the IP path** (host decodes header timestamp); the
   CAN destination carries no time information.
-
-### 9.2 Code review findings
-
-| # | Where | Finding |
-| --- | --- | --- |
-| 1 | `Mirror.c:1133-1134` | `Mirror_GetNetworkHandle` searches `MIRROR_CONFIG->ComChannelMaps[network]` instead of `[i]` - it inspects the same (initially `MIRROR_INVALID_NETWORK`) element on every iteration, so the function can never find a match and reads `ComChannelMaps[0xFF]` out of bounds on the first iteration. Copy-paste/variable-shadowing bug; any caller relying on this API gets `MIRROR_INVALID_NETWORK` or a crash. |
-| 2 | `Mirror.c:1170-1172` | `Mirror_ReportCanFrame` maps `controllerId` through `CanCtrlIdToNetworkMaps` without checking for `MIRROR_INVALID_NETWORK`; a CAN controller that is not configured as a mirror source yields `config = &SourceNetworkCans[<huge>]` (out-of-bounds pointer) before the `bStarted` check can save it. CanIf calls this API for *every* controller in the system. |
-| 3 | `Mirror.c:1176-1188` | The filter loop condition `i < config->context->MaxActiveFilterId` combined with `MaxActiveFilterId == 0 -> accept all` means: adding one filter and deactivating it does **not** restore "accept all" - the accept-all case is only the pristine state. After `Mirror_RemoveFilter`, `MaxActiveFilterId` is compacted, which silently re-enables frames that the removed filter used to pass. |
-| 4 | `Mirror.c:335-390` | `Mirror_EnqueCanFrame` reserves `numPackets` slots via a capability check and then writes them one by one; correct as long as `in - out <= NumOfDataElements` holds - but the capability arithmetic (`0xFFFFul - out + 1u + in`) is correct only while `in`/`out` differ by less than 65536. With uint16 counters and long uptimes this holds, but the code deserves a comment; a single misplaced increment breaks the invariant silently. |
-| 5 | `Mirror.c:201-216` | `Mirror_ValidateLinFilter` is used for both range and mask LIN filters, while CAN has separate validate paths; the LIN mask filter semantics (`code/mask` over an 6-bit PID) differ subtly from the CAN one - easy to configure a LIN mask that never matches. |
-| 6 | `Mirror.c:1549` total | At 1549 lines with 20+ static functions all gated by different `#ifdef` combinations (`MIRROR_USE_SOURCE_CAN`, `MIRROR_USE_DEST_CAN`, `USE_SOAD`, ...), the module has no unit tests in-tree beyond `test/mirror_test.cpp`; most combinations (e.g. LIN source + CAN dest) are only exercised by hardware demos. |
-| 7 | `Mirror.py:44` | `#define MIRROR_%s %su` for `TxPduId` - the generated macro name (`MIRROR_MIRROR_TX` for `TxPduId: "MIRROR_TX"`) is redundant but harmless; a `TxPduId` name colliding with a network name would silently produce a duplicate macro. |
-| 8 | `Mirror.py:249-251` | `DestQueueSize` for CAN destinations is **doubled** (128 -> 256 slots) with an `assert` on power-of-two; the doubled value is what RAM is allocated for, but `DestQueueSize` in the JSON reads like the slot count. IP destinations use the raw value. Inconsistent and undocumented. |
-| 9 | `Mirror.c:293` | `Mirror_SetNetworkLinFilterState` and the CAN counterpart duplicate the same bounds logic four times (get/set x CAN/LIN) - one bad refactor away from the `GetNetworkHandle` bug above. |
-| 10 | `Mirror_Test.c` | `Mirror_TestStart` trusts `*currentDataLength` for command dispatch but several commands read fixed offsets (`dataIn[1..3]`) after only checking some lengths; a tester sending a short request on `CMD_MIRROR_ADD_CAN_MASK_FILTER` (checked) is fine, but any new command added without the same care will read past the buffer. |
-
----
 
 ## 10. Related documents
 

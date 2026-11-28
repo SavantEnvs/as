@@ -274,18 +274,15 @@ Std_ReturnType Fls_Erase(Fls_AddressType targetAddress, Fls_LengthType length) {
 
   EnterCritical();
   if (FLS_PENDING != (FLS_STATE_MASK & context->state)) {
+    context->data = NULL;
+    context->address = targetAddress;
+    context->length = length;
+    context->offset = 0;
     context->state = FLS_PENDING | FLS_JOB_ERASE;
   } else {
     r = E_NOT_OK;
   }
   ExitCritical();
-
-  if (E_OK == r) {
-    context->data = NULL;
-    context->address = targetAddress;
-    context->length = length;
-    context->offset = 0;
-  }
 
   return r;
 }
@@ -302,18 +299,15 @@ Std_ReturnType Fls_Write(Fls_AddressType targetAddress, const uint8_t *sourceAdd
 
   EnterCritical();
   if (FLS_PENDING != (FLS_STATE_MASK & context->state)) {
+    context->data = (uint8_t *)sourceAddressPtr;
+    context->address = targetAddress;
+    context->length = length;
+    context->offset = 0;
     context->state = FLS_PENDING | FLS_JOB_WRITE;
   } else {
     r = E_NOT_OK;
   }
   ExitCritical();
-
-  if (E_OK == r) {
-    context->data = (uint8_t *)sourceAddressPtr;
-    context->address = targetAddress;
-    context->length = length;
-    context->offset = 0;
-  }
 
   return r;
 }
@@ -388,18 +382,15 @@ Std_ReturnType Fls_Read(Fls_AddressType sourceAddress, uint8_t *targetAddressPtr
 
   EnterCritical();
   if (FLS_PENDING != (FLS_STATE_MASK & context->state)) {
+    context->data = targetAddressPtr;
+    context->address = sourceAddress;
+    context->length = length;
+    context->offset = 0;
     context->state = FLS_PENDING | FLS_JOB_READ;
   } else {
     r = E_NOT_OK;
   }
   ExitCritical();
-
-  if (E_OK == r) {
-    context->data = targetAddressPtr;
-    context->address = sourceAddress;
-    context->length = length;
-    context->offset = 0;
-  }
 
   return r;
 }
@@ -415,18 +406,15 @@ Std_ReturnType Fls_Compare(Fls_AddressType sourceAddress, const uint8_t *targetA
 
   EnterCritical();
   if (FLS_PENDING != (FLS_STATE_MASK & context->state)) {
+    context->data = (uint8_t *)targetAddressPtr;
+    context->address = sourceAddress;
+    context->length = length;
+    context->offset = 0;
     context->state = FLS_PENDING | FLS_JOB_COMPARE;
   } else {
     r = E_NOT_OK;
   }
   ExitCritical();
-
-  if (E_OK == r) {
-    context->data = (uint8_t *)targetAddressPtr;
-    context->address = sourceAddress;
-    context->length = length;
-    context->offset = 0;
-  }
 
   return r;
 }
@@ -446,18 +434,15 @@ Std_ReturnType Fls_BlankCheck(Fls_AddressType targetAddress, Fls_LengthType leng
 
   EnterCritical();
   if (FLS_PENDING != (FLS_STATE_MASK & context->state)) {
+    context->data = NULL;
+    context->address = targetAddress;
+    context->length = length;
+    context->offset = 0;
     context->state = FLS_PENDING | FLS_JOB_BLANK_CHECK;
   } else {
     r = E_NOT_OK;
   }
   ExitCritical();
-
-  if (E_OK == r) {
-    context->data = NULL;
-    context->address = targetAddress;
-    context->length = length;
-    context->offset = 0;
-  }
 
   return r;
 }

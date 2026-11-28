@@ -148,21 +148,28 @@ static void SecOC_ProcRx(PduIdType rxPduId) {
     } else {
       dataLength = RxPduProc->Context->SduLength - macLength;
     }
-    ASLOG(SECOC, ("[%u] RxPdu data length = %u, backup %u auth info to pos %u\n", rxPduId,
-                  dataLength, macLength, RxPduProc->BufLen - macLength));
-    /* backup authentication information to the end of the woking buffer */
-    (void)memcpy(&RxPduProc->Buffer[RxPduProc->BufLen - macLength],
-                 &RxPduProc->Buffer[2u + RxPduProc->AuthPduHeaderLength + dataLength], macLength);
+    if ((2u + RxPduProc->AuthPduHeaderLength + dataLength + macLength) > RxPduProc->BufLen) {
+      ASLOG(SECOCE, ("[%u] RxPdu data length %u is out of buffer\n", rxPduId, dataLength));
+      ret = E_NOT_OK;
+    }
+    if (E_OK == ret) {
+      ASLOG(SECOC, ("[%u] RxPdu data length = %u, backup %u auth info to pos %u\n", rxPduId,
+                    dataLength, macLength, RxPduProc->BufLen - macLength));
+      /* backup authentication information to the end of the woking buffer */
+      (void)memcpy(&RxPduProc->Buffer[RxPduProc->BufLen - macLength],
+                   &RxPduProc->Buffer[2u + RxPduProc->AuthPduHeaderLength + dataLength], macLength);
 
-    /* DataToAuthenticator = Data Identifier | Authentic I-PDU | Complete Freshness Value */
-    RxPduProc->Buffer[2u + RxPduProc->AuthPduHeaderLength - 2u] = (RxPduProc->DataId >> 8) & 0xFFu;
-    RxPduProc->Buffer[2u + RxPduProc->AuthPduHeaderLength - 1u] = RxPduProc->DataId & 0xFFu;
-    FreshnessValueLength = RxPduProc->FreshnessValueLength;
-    if (FreshnessValueLength > 0u) {
-      ret =
-        SecOC_GetTxFreshness(RxPduProc->FreshnessValueId,
-                             &RxPduProc->Buffer[2u + RxPduProc->AuthPduHeaderLength + dataLength],
-                             &FreshnessValueLength);
+      /* DataToAuthenticator = Data Identifier | Authentic I-PDU | Complete Freshness Value */
+      RxPduProc->Buffer[2u + RxPduProc->AuthPduHeaderLength - 2u] =
+        (RxPduProc->DataId >> 8) & 0xFFu;
+      RxPduProc->Buffer[2u + RxPduProc->AuthPduHeaderLength - 1u] = RxPduProc->DataId & 0xFFu;
+      FreshnessValueLength = RxPduProc->FreshnessValueLength;
+      if (FreshnessValueLength > 0u) {
+        ret =
+          SecOC_GetTxFreshness(RxPduProc->FreshnessValueId,
+                               &RxPduProc->Buffer[2u + RxPduProc->AuthPduHeaderLength + dataLength],
+                               &FreshnessValueLength);
+      }
     }
     if (E_OK == ret) {
       macLength = (RxPduProc->AuthInfoLength + 7u) >> 3;

@@ -238,7 +238,8 @@ extern "C" BufReq_ReturnType LinTp_CopyRxData(PduIdType id, const PduInfoType *i
                                               PduLengthType *bufferSizePtr) {
   BufReq_ReturnType ret = BUFREQ_OK;
 
-  if (isotpTp.Rx.Index < isotpTp.Rx.Length) {
+  if ((isotpTp.Rx.Index < isotpTp.Rx.Length) &&
+      (info->SduLength <= (isotpTp.Rx.Length - isotpTp.Rx.Index))) {
     memcpy(&isotpTp.Rx.Data[isotpTp.Rx.Index], info->SduDataPtr, info->SduLength);
     isotpTp.Rx.Index += info->SduLength;
     *bufferSizePtr = isotpTp.Rx.Length - isotpTp.Rx.Index;

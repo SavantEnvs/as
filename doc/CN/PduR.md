@@ -29,7 +29,6 @@ comments: true
 6. [构建与运行演示](#6-构建与运行演示)
 7. [关键注意事项](#7-关键注意事项)
 8. [故障排查](#8-故障排查)
-9. [已知局限](#9-已知局限)
 
 ---
 
@@ -260,28 +259,6 @@ flowchart LR
 | 确认永远不来 | `To` 模块从不确认（如 `Mirror` 没有 Transmit） | 查看 `PduR_MirrorApi` |
 
 ---
-
-## 9. 已知局限
-
-以下是对 `infras/communication/PduR/PduR.c` 与 `tools/generator/PduR.py` 的代码
-审查结论（已核实）：
-
-1. **`PduR_EnableRouting()` / `PduR_DisableRouting()` 只有声明没有实现** -
-   任何调用都会链接失败；路由永远处于使能状态。
-2. **TP 路径只用第一个目的**（`StartOfReception` / `CopyRxData` /
-   `TpRxIndication` 中的 `DestPduRef[0]`）；TP 路径上的 `Destinations[]` 第 2 个
-   及以后被静默忽略。
-3. **`UsePostBuildConfig` / `PDUR_USE_PB_CONFIG` 是死的**：`PduR_Priv.h` 把
-   `PDUR_CONFIG` 硬编码为 `&PduR_Config`。
-4. **`enable_base_id` 是死键**：`PduR.py:317` 读入全局变量后从未使用。
-5. **`PduR_Transmit` 只返回第一个目的的失败** - 多播时无法区分是哪个目的失败；
-   日志里只带目的下标。
-6. **网关缓冲溢出没有 DET/ASLOG**：`PduR_GwCopyTxData` 在 `buffer->data == NULL`
-   时直接返回 `BUFREQ_E_NOT_OK`，无任何诊断输出。
-7. **生成器为每个路由模块写 `#include "<mod>.h"` + `"<mod>_Cfg.h"`** - 从构建中
-   移除某模块时必须同时删掉它的路由路径，否则生成文件编不过。
-8. **`Comments` 字段被接受但忽略**（如
-   `backup-routines-secoc-test-over-cantp` 里）- 无害，但未写进文档。
 
 **相关文档：** [CanIf](CanIf.md) - [CanTp](CanTp.md) - [Com](Com.md) -
 [Dcm](Dcm.md) - [SecOC](SecOC.md) - [Mirror](Mirror.md)

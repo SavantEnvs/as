@@ -53,12 +53,13 @@
     switch (event) {                                                                               \
     case EA_JOB_EVENT_START:                                                                       \
     case EA_JOB_EVENT_ERROR:                                                                       \
-      if (context->RetryCounter <= retryMax) {                                                     \
+      if ((FALSE == context->bCanceled) && (context->RetryCounter <= retryMax)) {                  \
         context->RetryCounter++;                                                                   \
         Ea_Do##jobName##_OnEventStart(step);                                                       \
       } else {                                                                                     \
         context->State = EA_IDLE;                                                                  \
         context->RetryCounter = 0;                                                                 \
+        context->bCanceled = FALSE;                                                                \
         ASLOG(EAE, ("Ea Do " #jobName " Job Failed\n"));                                           \
         config->JobErrorNotification();                                                            \
       }                                                                                            \
@@ -85,6 +86,7 @@ typedef struct {
     uint16_t Length;
   } Job;
   uint8_t RetryCounter;
+  boolean bCanceled;
 } Ea_ContextType;
 /* ================================ [ DECLARES  ] ============================================== */
 extern CONSTANT(Ea_ConfigType, EA_CONST) Ea_Config;
@@ -148,6 +150,7 @@ static void Ea_DoWrite_OnEventStart(Ea_StepType step) {
     }
     break;
   case EA_WRITE_STEP2_WRITE:
+    context->Step = EA_WRITE_STEP2_WRITE;
     r = Eep_Write(config->Blocks[context->Job.BlockId].BlockAddress, context->Job.DataBufferPtr,
                   config->Blocks[context->Job.BlockId].BlockSize);
     if (E_OK == r) {
@@ -155,7 +158,6 @@ static void Ea_DoWrite_OnEventStart(Ea_StepType step) {
     } else {
       context->State = EA_JOB_WRITE | EA_PENDING;
     }
-    context->Step = EA_WRITE_STEP2_WRITE;
     break;
   default:
     Ea_Panic();
@@ -191,6 +193,7 @@ EaDoJobTemplate(Read, 0) EaDoJobTemplate(Write, 0)
   context->State = EA_IDLE;
   context->Step = EA_STEP_IDLE;
   context->RetryCounter = 0;
+  context->bCanceled = FALSE;
 }
 
 void Ea_SetMode(MemIf_ModeType mode) {
@@ -209,24 +212,23 @@ Std_ReturnType Ea_Read(uint16_t blockNumber, uint16_t blockOffset, uint8_t *data
                EA_E_INVALID_BLOCK_NO, return E_NOT_OK);
   DET_VALIDATE(config->Blocks[blockNumber - 1].BlockSize >= ((uint32_t)blockOffset + length), 0x02,
                EA_E_INVALID_BLOCK_OFS, return E_NOT_OK);
+  DET_VALIDATE(NULL != dataBufferPtr, 0x02, EA_E_PARAM_POINTER, return E_NOT_OK);
 
   EnterCritical();
   if (EA_IDLE == (EA_STATE_MASK & context->State)) {
     context->State = EA_JOB_READ | EA_PENDING;
     context->Step = EA_STEP_IDLE;
     context->RetryCounter = 0;
+    context->bCanceled = FALSE;
+    context->Job.BlockId = blockNumber - 1;
+    context->Job.BlockOffset = blockOffset;
+    context->Job.DataBufferPtr = dataBufferPtr;
+    context->Job.Length = length;
     r = E_OK;
   } else {
     r = E_NOT_OK;
   }
   ExitCritical();
-
-  if (E_OK == r) {
-    context->Job.BlockId = blockNumber - 1;
-    context->Job.BlockOffset = blockOffset;
-    context->Job.DataBufferPtr = dataBufferPtr;
-    context->Job.Length = length;
-  }
 
   return r;
 }
@@ -247,21 +249,22 @@ Std_ReturnType Ea_Write(uint16_t blockNumber, const uint8_t *dataBufferPtr) {
     context->State = EA_JOB_WRITE | EA_PENDING;
     context->Step = EA_STEP_IDLE;
     context->RetryCounter = 0;
+    context->bCanceled = FALSE;
+    context->Job.BlockId = blockNumber - 1;
+    context->Job.DataBufferPtr = (uint8_t *)dataBufferPtr;
     r = E_OK;
   } else {
     r = E_NOT_OK;
   }
   ExitCritical();
 
-  if (E_OK == r) {
-    context->Job.BlockId = blockNumber - 1;
-    context->Job.DataBufferPtr = (uint8_t *)dataBufferPtr;
-  }
-
   return r;
 }
 
 void Ea_Cancel(void) {
+  Ea_ContextType *context = &Ea_Context;
+
+  context->bCanceled = TRUE;
   Eep_Cancel();
 }
 

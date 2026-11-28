@@ -28,7 +28,7 @@ comments: true
 6. [构建与运行](#6-构建与运行)
 7. [关键要点与易错点](#7-关键要点与易错点)
 8. [排错](#8-排错)
-9. [已知限制与代码审查发现](#9-已知限制与代码审查发现)
+9. [已知限制](#9-已知限制)
 10. [相关文档](#10-相关文档)
 
 ## 1. 协议基础
@@ -471,28 +471,13 @@ DoIPSend.exe -v 1001 -s 0x0F00 -t 0x757
 | 小的 UDS 响应正常、大的 UDS 响应收不到 | 超过一个 `Net_Mem` 内存的响应需要续发路径——见限制 9.1 |
 | 链接错误 `DoIP_<name>_RoutingActivationAuthenticationCallback` 未定义 | `Routines[]` 里每个路由激活都需要应用实现两个回调 |
 
-## 9. 已知限制与代码审查发现
+## 9. 已知限制
 
 功能限制：
 
 * 仅支持单个 DoIP 实体（单配置、单 UDP 套接字）；`DoIP_ActivationLineSwitch` 只接受 `InterfaceId == 0`。
 * 路由激活的认证按激活类型一票通过，没有按报文级的安全机制；需要时报文安全请用 SecOC，通道安全请用 TLS。
 * 车辆通告始终通告完整 VIN/EID/GID；未实现 VIN/GID 管理（0x0008-0x0011 同步）。
-
-代码审查发现（基于 v4.0.5，`infras/communication/DoIP/DoIP.c`）：
-
-| # | 位置 | 发现 |
-| --- | --- | --- |
-| 1 | DoIP.c:1011 | `doipHandleDiagMsgResponse()` 在循环体开头就给 `connection` 赋值，导致外层（`NULL == connection`）与内层循环条件永远不成立——该函数永远找不到处于 `DOIP_MSG_TX` 状态的节点，实际上是死代码。后果：超过一个 `Net_Mem` 内存块大小的 UDS 响应（由 `DoIP_TpTransmit` 启动续发、置状态 `DOIP_MSG_TX`）永远不会续传完成——响应卡死 |
-| 2 | DoIP.c:849 | `doipHandleAliveCheckResponse()` 解引用 `connection->context->TesterRef->TesterSA` 前没有判空；`TesterRef` 只有路由激活成功后才置位，因此在新建连接上收到一条未经请求的 `0x0008` 会造成空指针崩溃 |
-| 3 | DoIP.c:501 | 路由激活允许 `payloadLength` 为 7（无 OEM），但 `memcpy(..., &msg->req[7], 4)` 无条件读取载荷之后 4 字节（越界读入 `ramgr.OEM`） |
-| 4 | DoIP.c:733/810 | `sa`/`ta` 只在 `DOIP_MSG_IDLE` 分支赋值；TP 续发路径上发出 0x8003 否定应答时使用的是未初始化值 |
-| 5 | DoIp.py:214 | 生成配置中的 `LogicalAddress` 硬编码为 `0xdead`，没有从配置的 targets 推导 |
-| 6 | DoIP.c:265-280 | `doipFindRoutingActivation()` 命中后不跳出；若两个路由激活的 `Number` 相同，后面的会静默覆盖前面的 |
-| 7 | DoIP.c:800-803 | 肯定应答被构造两次（先内联填充、随后 `doipReplyDiagMsg()` 整体覆盖）——冗余但无害 |
-| 8 | DoIP.c:1276 | `DoIP_SoAdIfRxIndication()` 固定用 `UdpConnections[0]` 回复（代码有注释说明）——仅在当前单 UDP 套接字设计下成立 |
-| 9 | DoIP.c:1065 | `DoIP_Init()` 忽略入参 `ConfigPtr`，直接使用全局 `DoIP_Config` |
-| 10 | DoIP.c:73 | 报文头检查只接受版本 `0x02`；ISO 13400 还定义了 `0x03` 及 UDP 发现报文的 `0x0E..0x0F`——使用这些版本的诊断仪会收到报文头 NACK |
 
 ## 10. 相关文档
 

@@ -30,7 +30,6 @@ comments: true
 6. [Build and run a demo](#6-build-and-run-a-demo)
 7. [Key notes and gotchas](#7-key-notes-and-gotchas)
 8. [Troubleshooting](#8-troubleshooting)
-9. [Known limitations](#9-known-limitations)
 
 ---
 
@@ -272,30 +271,6 @@ Enable tracing with `AS_LOG_PDUR=3` to see `PduR_RxIndication <id>` /
 | Confirmation never arrives | the `To` module never confirms (e.g. `Mirror` has no Transmit) | inspect `PduR_MirrorApi` |
 
 ---
-
-## 9. Known limitations
-
-Code review findings verified against `infras/communication/PduR/PduR.c` and
-`tools/generator/PduR.py`:
-
-1. **`PduR_EnableRouting()` / `PduR_DisableRouting()` are declared but not
-   implemented** - any caller fails at link time; routing is always enabled.
-2. **TP paths use only the first destination** (`DestPduRef[0]` in
-   `StartOfReception` / `CopyRxData` / `TpRxIndication`); a `Destinations[]`
-   list on a TP path silently ignores destinations 2..n.
-3. **`UsePostBuildConfig` / `PDUR_USE_PB_CONFIG` is dead**: `PDUR_CONFIG` is
-   hard-wired to `&PduR_Config` in `PduR_Priv.h`.
-4. **`enable_base_id` is a dead key**: read into a global in `PduR.py:317`, never
-   consumed.
-5. **`PduR_Transmit` returns only the first destination failure** - with
-   multicast you cannot tell which destination failed; the log names the index.
-6. **No Det/ASLOG on the gateway buffer overflow**: `PduR_GwCopyTxData` returns
-   `BUFREQ_E_NOT_OK` when `buffer->data == NULL` without any diagnostic output.
-7. **Generator writes `#include "<mod>.h"` + `"<mod>_Cfg.h"` for every routed
-   module** - removing a module from the build requires removing its routing
-   paths too, otherwise the generated file does not compile.
-8. **The `Comments` field is accepted** (e.g. in
-   `backup-routines-secoc-test-over-cantp`) and ignored - fine, but undocumented.
 
 **Related documents:** [CanIf](CanIf.md) - [CanTp](CanTp.md) - [Com](Com.md) -
 [Dcm](Dcm.md) - [SecOC](SecOC.md) - [Mirror](Mirror.md)

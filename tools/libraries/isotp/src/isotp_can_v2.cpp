@@ -77,6 +77,11 @@ public:
     while (0 == r) {
       r = waitFrame();
       if (r > 0) {
+        if ((size_t)r > rxSize) {
+          ASLOG(ISOTPE, ("rx buffer too small, %d > %d\n", r, (int)rxSize));
+          r = -EOVERFLOW;
+          break;
+        }
         memcpy(&rxBuffer[0], &m_rxBuffer[0], r);
       }
     }
@@ -552,6 +557,14 @@ private:
     return dl;
   }
 
+public:
+  /* ISOTP_IOCTL_SET_TIMEOUT carries microseconds, the wait of this implementation is in
+   * milliseconds, so convert it here */
+  void setTimeoutUs(uint32_t timeoutUs) {
+    uint32_t ms = timeoutUs / 1000u;
+    m_timeoutMs = (ms > 0u) ? ms : 1u;
+  }
+
 private:
   IsoTp_Type *m_isotp;
   uint8_t m_LinkLayerDataLength;
@@ -673,6 +686,7 @@ int IsoTp_CanV2IoCtl(IsoTp_Type *isotp, int cmd, const void *data, size_t size) 
       uint32_t timeoutUs = *(uint32_t *)data;
       *(uint32_t *)data = isotp->ErrorTimeout;
       isotp->ErrorTimeout = timeoutUs;
+      ((IsotpCanV2 *)isotp->Priv)->setTimeoutUs(timeoutUs);
       r = 0;
     }
   default:

@@ -13,7 +13,7 @@
 #include "Det.h"
 /* ================================ [ MACROS    ] ============================================== */
 #ifdef E2E_USE_PB_CONFIG
-#define E2E_CONFIG cantpConfig
+#define E2E_CONFIG e2eConfig
 #else
 #define E2E_CONFIG (&E2E_Config)
 #endif
@@ -51,7 +51,7 @@ static uint8_t E2E_ComputeP11Crc(const E2E_Profile11ConfigType *config, uint8_t 
      * is included (see variant 1B - PRS_E2EProtocol_00228). For even counter values the low byte is
      * included and for odd counter values the high byte is included. */
     Counter = (data[config->CounterOffset >> 3] >> (config->CounterOffset & 0x07u)) & 0x0Fu;
-    if (0u != (Counter & 0x01u)) { /* even counter */
+    if (0u == (Counter & 0x01u)) { /* even counter */
       tmp = config->DataID & 0xFFu;
       crc = Crc_CalculateCRC8(&tmp, 1u, crc, FALSE);
     } else {
@@ -315,7 +315,7 @@ Std_ReturnType E2E_P22Protect(E2E_ProfileIdType profileId, uint8_t *data, uint16
   Std_ReturnType ret = E_NOT_OK;
   const E2E_ProtectProfile22ConfigType *config;
   DET_VALIDATE(NULL != E2E_CONFIG, 0x22, E2E_E_UNINIT, return E_NOT_OK);
-  DET_VALIDATE(profileId < E2E_CONFIG->NumOfProtectP11, 0x22, E2E_E_PARAM_ID, return E_NOT_OK);
+  DET_VALIDATE(profileId < E2E_CONFIG->NumOfProtectP22, 0x22, E2E_E_PARAM_ID, return E_NOT_OK);
   DET_VALIDATE((NULL != data) && (length > 2u), 0x22, E2E_E_PARAM_POINTER, return E_NOT_OK);
   config = &E2E_CONFIG->ProtectP22Configs[profileId];
 
@@ -459,10 +459,10 @@ Std_ReturnType E2E_P44Check(E2E_ProfileIdType profileId, uint8_t *data, uint16_t
   DET_VALIDATE((NULL != data) && (length > 12u), 0x45, E2E_E_PARAM_POINTER, return E_NOT_OK);
   config = &E2E_CONFIG->CheckP44Configs[profileId];
 
-  offset = config->P44.Offset;
+  offset = config->P44.Offset >> 3;
 
   ReceivedLength = ((uint16_t)data[offset + 0u] << 8) + data[offset + 1u];
-  if ((ReceivedLength < length) || ((offset + 12u) >= ReceivedLength)) {
+  if ((ReceivedLength != length) || ((offset + 12u) >= ReceivedLength)) {
     ASLOG(E2EE, ("[%u] P44 length %u < %u\n", profileId, ReceivedLength, length));
     ret = E_NOT_OK;
   }

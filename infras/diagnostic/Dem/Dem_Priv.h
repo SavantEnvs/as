@@ -237,6 +237,27 @@ typedef struct {
   Dem_DTCOriginType DTCOrigin;
 } Dem_MemoryDestinationType;
 
+/* @SWS_Dem_00218 support: occurrence-order tracking queues, see doc/EN/Dem.md
+ * 3.7. The entries are DtcId values in occurrence order, the first
+ * DEM_INVALID_DTC_ID entry terminates the valid part (no Count field). Every
+ * DtcId occupies at most two entries in the failed-order queue (its first and
+ * its most recent failure) and at most one entry in the confirmed-order
+ * queue */
+#if defined(DEM_USE_FAILED_DTC_ORDER_QUEUE) || defined(DEM_USE_CONFIRMED_DTC_ORDER_QUEUE)
+typedef struct {
+#ifdef DEM_USE_FAILED_DTC_ORDER_QUEUE
+  CONSTP2VAR(uint16_t, AUTOMATIC, DEM_CONST)
+  FailedOrderQueue; /* 2*NumOfDtcs entries, head = first failed, tail = most recent */
+  uint16_t FailedOrderQueueNvmBlockId;
+#endif
+#ifdef DEM_USE_CONFIRMED_DTC_ORDER_QUEUE
+  CONSTP2VAR(uint16_t, AUTOMATIC, DEM_CONST)
+  ConfirmedOrderQueue; /* NumOfDtcs entries, head = first confirmed, tail = most recent */
+  uint16_t ConfirmedOrderQueueNvmBlockId;
+#endif
+} Dem_DtcOrderQueueConfigType;
+#endif
+
 /* @ECUC_Dem_00641 */
 typedef struct {
   P2CONST(Dem_ExtendedDataClassType, AUTOMATIC, DEM_CONST) ExtendedDataClass;
@@ -268,9 +289,9 @@ typedef struct {
   uint32_t DtcNumber; /* @ECUC_Dem_00887 */
   Dem_DtcIdType DtcId;
   uint8_t NumOfEvents;
+  uint8_t FunctionalUnit;       /* @ECUC_Dem_00643 */
+  Dem_DTCSeverityType Severity; /* @ECUC_Dem_00645 */
 #if 0
-  uint8_t FunctionalUnit;
-  Dem_DTCSeverityType Severity;
   Dem_NvStorageStrategyType NvStorageStrategy;
 #endif
 } Dem_DTCType;
@@ -314,6 +335,9 @@ struct Dem_Config_s {
 #endif
   P2CONST(Dem_DTCType, AUTOMATIC, DEM_CONST) Dtcs;
   P2CONST(Dem_MemoryDestinationType, AUTOMATIC, DEM_CONST) MemoryDestination;
+#if defined(DEM_USE_FAILED_DTC_ORDER_QUEUE) || defined(DEM_USE_CONFIRMED_DTC_ORDER_QUEUE)
+  P2CONST(Dem_DtcOrderQueueConfigType, AUTOMATIC, DEM_CONST) DtcOrderQueue;
+#endif
   Dem_OperationCycleStateType *OperationCycleStates;
   uint16_t NumOfFreeFrameDataConfigs;
   uint16_t NumOfEvents;
@@ -331,9 +355,9 @@ struct Dem_Config_s {
 /* ================================ [ FUNCTIONS ] ============================================== */
 /* standard EXTENDED DATA supported by DEM  */
 Std_ReturnType Dem_EXTD_GetFaultOccurrenceCounter(Dem_EventIdType eventId, uint8_t *data,
-                                                  Dem_DTCOriginType dTCOrigin);
+                                                  Dem_DTCOriginType dtcOrigin);
 Std_ReturnType Dem_EXTD_GetAgingCounter(Dem_EventIdType eventId, uint8_t *data,
-                                        Dem_DTCOriginType dTCOrigin);
+                                        Dem_DTCOriginType dtcOrigin);
 Std_ReturnType Dem_EXTD_GetAgedCounter(Dem_EventIdType eventId, uint8_t *data,
-                                       Dem_DTCOriginType dTCOrigin);
+                                       Dem_DTCOriginType dtcOrigin);
 #endif /* DEM_PRIV_H */

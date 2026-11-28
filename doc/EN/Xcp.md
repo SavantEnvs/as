@@ -32,7 +32,7 @@ comments: true
 6. [Build and run a demo](#6-build-and-run-a-demo)
 7. [Key notes and gotchas](#7-key-notes-and-gotchas)
 8. [Troubleshooting](#8-troubleshooting)
-9. [Known limitations and code review findings](#9-known-limitations-and-code-review-findings)
+9. [Known limitations](#9-known-limitations)
 10. [Related documents](#10-related-documents)
 
 ---
@@ -104,7 +104,7 @@ Plus two scalar keys: `PacketPoolSize` (default `8`, `#ifndef`-guarded macro
 `XCP_PACKET_POOL_SIZE`) and `MainFunctionPeriod` (default `10` ms,
 `XCP_MAIN_FUNCTION_PERIOD`). Note `UsePostBuildConfig` (default **true** here,
 unlike most modules) only emits an `XCP_USE_PB_CONFIG` macro that `Xcp.c`
-never reads - see section 9.
+never reads.
 
 ### 3.1 Event channels
 
@@ -377,9 +377,7 @@ each frame and concatenates (see `UIMeasure::on_btnRead_clicked()` in
 
 ---
 
-## 9. Known limitations and code review findings
-
-### 9.1 Functional limitations
+## 9. Known limitations
 
 * **CAN transport only.** `XCP_ON_FLEXRAY_CHL` / `XCP_ON_ETHERNET_CHL` are
   declared but not implemented; there is no XCP-on-Ethernet/TCP.
@@ -390,23 +388,6 @@ each frame and concatenates (see `UIMeasure::on_btnRead_clicked()` in
   only channel 0.
 * **Host MTA is stubbed** (`Xcp_Mta.c`), so measurement on `linux`/`_WIN32`
   returns stale data; flashing needs a per-target `Xcp_DspPgm.c` integration.
-
-### 9.2 Code review findings
-
-| # | Where | Finding |
-| --- | --- | --- |
-| 1 | `Xcp.c:345-366` | `Xcp_RxIndication` calls `Xcp_TxError(channel, nrc)` **directly** on errors - and `Xcp_RxIndication` runs in the CanIf RX context (potentially an ISR). `Xcp_TxError` allocates a pool packet (with `mp_alloc`, protected) and calls `CanIf_Transmit`, so error responses are sent from ISR context; on drivers that do not allow TX from ISR this is a latent race. |
-| 2 | `Xcp.c:33-53` | `Xcp_FindService` computes `h = numOfServices - 1` and dereferences `config->services[0]` before any empty-table check; an `Xcp.json` without `Services[]` produces an underflow and an out-of-bounds read (same pattern as `LinIf_HeaderIndication`). |
-| 3 | `Xcp.c:160-166` | When a *different* command arrives while a service is still `PENDING`, the code logs "Fatal memory error", aborts the pending service and starts the new one. For `Program*` sequences (which are legitimately pending for a long time) an interleaved command silently corrupts the programming session instead of answering `CMD_BUSY`. |
-| 4 | `Xcp.c:210-231` | `Xcp_MainFunction_Response` has no timeout/queue-depth control: if `CanIf_Transmit` never succeeds (bus off), TX packets accumulate until the pool is exhausted, which then also blocks RX commands (`no free packet`). |
-| 5 | `Xcp.c:419-421` | `Xcp_MainFunction_Write` runs DAQ *writing* from the EcuM main list while `Xcp_MainFunction_Daq` (sampling) runs in `Xcp_MainFunction` - both are the same list in `EcuM_Cfg.c:176`, so the split brings no parallelism, just a naming trap. |
-| 6 | `Xcp_Priv.h:102-103` | `XCP_PATCKET_MAX_SIZE` - the macro name misspells "PACKET" and propagates into every DSP file; a rename is cosmetic but any grepping integrator will stumble. |
-| 7 | `Xcp.py:340` | `UsePostBuildConfig` defaults to **true** (all other modules default to false) and the generated `XCP_USE_PB_CONFIG` macro is never referenced by `Xcp.c` (`Xcp_Init` ignores `ConfigPtr` unconditionally). Misleading dead configuration. |
-| 8 | `Xcp.py:299-316` | `preprocess()` sorts `cfg["services"]` in place; the JSON itself is not rewritten, so the `GEN/Xcp_Cfg.c` order differs from the JSON order - surprising when diffing generated output. |
-| 9 | `Xcp_DspDaq.c` (888 lines) | The DAQ implementation keeps per-DAQ state in plain RAM structures without checksum/protection; a master that misconfigures `WriteDAQ` entries can point ODT entries at arbitrary addresses, and sampling then reads those addresses every cycle - by design for a calibration tool, but worth noting in a security review alongside `App_CompareKey`. |
-| 10 | `Xcp.c:124-207` | `resData[XCP_PATCKET_MAX_SIZE]` is a stack buffer of 8 bytes with `resMaxDataLen = 7`; any DSP function writing longer responses has no overflow detection beyond the `resMaxDataLen` convention - a new DSP command that ignores the convention overflows the stack silently. |
-
----
 
 ## 10. Related documents
 

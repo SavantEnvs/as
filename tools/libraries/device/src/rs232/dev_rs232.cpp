@@ -108,7 +108,7 @@ static int Dev_Rs232Open(const char *device, const char *option, void **param) {
       PPARAM(*param)->s = s;
     }
   } else if (0 == RS232_OpenComport(port, baudrate, modes, 0)) {
-    r = -__LINE__;
+    r = 0;
   } else {
     r = -__LINE__;
   }

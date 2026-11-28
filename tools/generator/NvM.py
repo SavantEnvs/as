@@ -15,6 +15,11 @@ def GetName(node):
     return node["Name"]
 
 
+def IsArrayData(data):
+    """a data is an array either its name ends with "{}" or its "Repeat" > 1"""
+    return data["Name"][-2:] == "{}" or data.get("Repeat", 1) > 1
+
+
 def GetBlockSize(block):
     size = 0
     for data in block["Data"]:
@@ -39,7 +44,7 @@ def GenTypes(H, cfg):
         for data in block["Data"]:
             dinfo = TypeInfoMap[data["Type"]]
             cstr = "  %s %s" % (dinfo["ctype"], GetName(data))
-            if data["Name"][-2:] == "{}":
+            if IsArrayData(data):
                 cstr += "[%s]" % (data["Repeat"])
             if dinfo["IsArray"]:
                 cstr += "[%s]" % (data["Size"])
@@ -382,7 +387,7 @@ def Gen(cfg):
     elif target == "Ea":
         Gen_Ea(cfg, dir)
         GenMemMap("Ea", dir)
-        source["Ea"] = ["%s/Fee_Cfg.c" % (dir)]
+        source["Ea"] = ["%s/Ea_Cfg.c" % (dir)]
     else:
         raise
     Gen_NvM(cfg, dir)

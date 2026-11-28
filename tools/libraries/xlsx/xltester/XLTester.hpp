@@ -42,6 +42,7 @@ public:
 
 private:
   int UdsRequestService(std::vector<uint8_t> &req, std::vector<uint8_t> &res, std::string address);
+  void FlushResponse();
   int InitIsoTp();
   int Init(std::string filePath);
   void AddMsg(int level, const char *fmt, ...);
@@ -100,6 +101,11 @@ private:
 
   IsoTp_ParameterType m_Params;
   uint32_t m_FuncAddr;
+  /* the ECU needs some time to get its Dcm Rx buffer free again between two
+   * requests, the "Delay(ms)" column of a case can override this value */
+  int m_InterCaseDelayMs = 0;
+  /* a response is queued on the ISO-TP channel and has to be dropped before the next request */
+  bool m_bNeedFlush = true;
   IsoTp_Type *m_IsoTp = nullptr;
   uint8_t m_Buffer[4096];
 

@@ -57,7 +57,7 @@ static void Dsd_HandleRequest(Dcm_ContextType *context,
       if (E_REQUEST_NOT_ACCEPTED == r) { /* @SWS_Dcm_00462:  reject and no response */
         context->RxBufferState = DCM_BUFFER_IDLE;
         context->TimerP2Server = 0;
-        responsePending = TRUE;
+        responsePending = DCM_RESPONSE_PENDING;
       } else if (E_OK != r) {
         if (DCM_POS_RESP == nrc) {
           ASLOG(DCME, ("Fatal verify service %X forgot to set NRC\n", SID));
@@ -105,7 +105,6 @@ static void Dsd_HandleRequest(Dcm_ContextType *context,
 
   if (DCM_NO_RESPONSE_PENDING != responsePending) {
     /* a pending response is on going, wait it done */
-    nrc = DCM_E_RESPONSE_PENDING;
   } else if (E_OK == r) {
     r = context->CurService->DspServiceFnc(&context->MsgContext, &nrc);
     if (r != E_OK) {

@@ -14,6 +14,10 @@ def get_u32_little(raw, offset):
     return raw[offset] + (raw[offset + 1] << 8) + (raw[offset + 2] << 16) + (raw[offset + 3] << 24)
 
 
+def get_u32_big(raw, offset):
+    return (raw[offset] << 24) + (raw[offset + 1] << 16) + (raw[offset + 2] << 8) + raw[offset + 3]
+
+
 def get_u32(raw, offset=0):
     if __args.endian == "little":
         return get_u32_little(raw, offset)
@@ -22,6 +26,10 @@ def get_u32(raw, offset=0):
 
 def get_u16_little(raw, offset):
     return raw[offset] + (raw[offset + 1] << 8)
+
+
+def get_u16_big(raw, offset):
+    return (raw[offset] << 8) + raw[offset + 1]
 
 
 def get_u16(raw, offset=0):
@@ -94,6 +102,9 @@ def decodeBlock(id, block, fault_size):
             BlockSize = get_u16(admin, 10)
             if BlockSize != 0xFFFF:
                 dataOff -= align_data(BlockSize)
+                if dataOff < 0:
+                    print('  warning: block data is corrupted, stop parsing')
+                    break
                 data = block[dataOff : dataOff + align_data(BlockSize)]
                 decodeData(admin, data)
             else:

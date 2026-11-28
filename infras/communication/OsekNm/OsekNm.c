@@ -12,6 +12,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "Std_Debug.h"
+#include "Det.h"
 /* ================================ [ MACROS    ] ============================================== */
 #define AS_LOG_OSEK_NM 0
 
@@ -584,6 +585,8 @@ Std_ReturnType OsekNm_Talk(NetworkHandleType netId) {
   if (netId < OSEKNM_CONFIG->NumOfChannels) {
     context = &OSEKNM_CONFIG->ChannelContexts[netId];
     context->Status.NetworkStatus |= OSEKNM_STATUS_ACTIVE;
+  } else {
+    ercd = E_NOT_OK;
   }
 
   return ercd;
@@ -886,7 +889,7 @@ void OsekNm_MainFunction(void) {
 }
 
 void OsekNm_GetVersionInfo(Std_VersionInfoType *versionInfo) {
-  versionInfo->VendorId = STD_VENDOR_ID_AS;
+    versionInfo->VendorId = STD_VENDOR_ID_AS;
   versionInfo->ModuleId = 0;
   versionInfo->SwMajorVersion = 4;
   versionInfo->SwMinorVersion = 0;

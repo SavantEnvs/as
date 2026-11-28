@@ -19,19 +19,19 @@ def get_period(p, msg):
     return CycleTime, FirstTime
 
 
-def get_init(p, sig):
+def get_init(p, msg_id, sig):
     name = sig["Name"]
     for ba in p.get("baList", []):
         if (ba[1] == '"GenSigStartValue"') and (ba[2] == "SG_"):
-            if ba[4] == name:
+            if (ba[3] == msg_id) and (ba[4] == name):
                 return ba[5]
     return None
 
 
-def get_comment(p, sig):
+def get_comment(p, msg_id, sig):
     name = sig["Name"]
     for cm in p.get("cmList", []):
-        if (cm[1] == "SG_") and (cm[3] == name):
+        if (cm[1] == "SG_") and (cm[2] == msg_id) and (cm[3] == name):
             return cm[4]
     return None
 
@@ -47,10 +47,10 @@ def post_process_period(p):
 def post_process_init(p):
     for msg in p["Messages"]:
         for sig in msg["Signals"]:
-            init = get_init(p, sig)
+            init = get_init(p, msg["Id"], sig)
             if init != None:
                 sig.update({"InitValue": init})
-            comment = get_comment(p, sig)
+            comment = get_comment(p, msg["Id"], sig)
             if comment != None:
                 sig.update({"Comment": comment})
 

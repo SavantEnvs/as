@@ -68,17 +68,18 @@ reserved.
 ```mermaid
 flowchart TD
     A["Ea_Write(BlockNumber, data)"] --> B["job = WRITE, step = ERASE"]
-    B --> C["Eep_Erase(BlockAddress, BlockSize)"]
+    B --> C["Eep_Erase(BlockAddress, EA_ALIGNED(BlockSize))"]
     C -->|done| D["step = WRITE"]
-    D --> E["Eep_Write(BlockAddress, data)"]
+    D --> E["Eep_Write(BlockAddress, data, whole BlockSize)"]
     E -->|done| F["JobEndNotification -> NvM"]
     G["Ea_Read(BlockNumber, offset, dst, len)"] --> H["job = READ"]
     H --> I["Eep_Read(BlockAddress + offset, dst, len)"]
     I -->|done| F
 ```
 
-One job at a time; `Ea_Cancel()` aborts the current job and reports an error to
-NvM.
+One job at a time; `Ea_Cancel()` aborts the current job (on the Eep error Ea
+does not retry and reports the failure to NvM directly). On an Eep error Ea
+retries the job once before reporting the failure to NvM.
 
 ---
 
@@ -89,8 +90,8 @@ NvM.
 | `Ea_Init(ConfigPtr)` | Register job callbacks |
 | `Ea_Read(BlockNumber, offset, dst, len)` | Async read job |
 | `Ea_Write(BlockNumber, src)` | Async erase+write job |
-| `Ea_InvalidateBlock` / `Ea_EraseImmediateBlock(BlockNumber)` | Erase helpers |
-| `Ea_Cancel()` / `Ea_SetMode(Mode)` | Job control |
+| `Ea_InvalidateBlock` / `Ea_EraseImmediateBlock(BlockNumber)` | always return `E_NOT_OK` (not supported) |
+| `Ea_Cancel()` / `Ea_SetMode(Mode)` | Cancel job / forwarded to `Eep_SetMode` |
 | `Ea_JobEndNotification` / `Ea_JobErrorNotification()` | Eep callbacks |
 | `Ea_MainFunction()` | Job worker |
 | `Ea_GetVersionInfo` | Version |
@@ -111,10 +112,11 @@ NvM.
 
 ## 6. Known limitations
 
-1. **No redundancy per block** - a failed write leaves the block blank/garbage;
-   NvM's CRC detects it but Ea does not retry.
+1. **No redundancy per block** - a write that still fails after the single
+   retry leaves the block blank/garbage; NvM's CRC detects it.
 2. **No wear levelling** - by design (fixed mapping).
-3. **`Ea_SetMode` has no effect** (no FAST/SLOW handling).
+3. **`Ea_SetMode` only forwards to `Eep_SetMode()`** - Eep (the Fls alias) uses
+   the mode to pick the per-mainfunction chunk size (FAST/SLOW).
 4. **No immediate-data special casing** (the `ImmediateData` flag is commented
    out in the config type).
 

@@ -100,7 +100,7 @@ static void Fee_Panic(uint8_t fault) {
      Fee_Factory.machines[Fee_Factory.context->machineId].nodes[Fee_Factory.context->nodeId].name));
 
 #ifdef FEE_USE_FAULTS
-  if (curBank > config->NumOfBanks) {
+  if (curBank >= config->NumOfBanks) {
     curBank = 0;
   }
   Fls_AcInit();
@@ -406,7 +406,11 @@ static Std_ReturnType Fee_DoSearchNextValidDataStart(uint8_t bankId) {
 
   if (address < blockAdminLow) {
     address = blockAdminLow;
-    numOfBlocks = (context->JobNextAddr - blockAdminLow) / FEE_ALIGNED(sizeof(Fee_BlockType));
+    if (context->JobNextAddr > blockAdminLow) {
+      numOfBlocks = (context->JobNextAddr - blockAdminLow) / FEE_ALIGNED(sizeof(Fee_BlockType));
+    } else {
+      numOfBlocks = 0; /* nothing to search before the first block admin */
+    }
   }
 
   if (numOfBlocks > 0u) {
@@ -444,7 +448,11 @@ static Std_ReturnType Fee_DoSearchNextValidDataEnd(uint8_t bankId) {
 
   if (address < blockAdminLow) {
     address = blockAdminLow;
-    numOfBlocks = (context->JobNextAddr - blockAdminLow) / FEE_ALIGNED(sizeof(Fee_BlockType));
+    if (context->JobNextAddr > blockAdminLow) {
+      numOfBlocks = (context->JobNextAddr - blockAdminLow) / FEE_ALIGNED(sizeof(Fee_BlockType));
+    } else {
+      numOfBlocks = 0; /* nothing to search before the first block admin */
+    }
   }
 
   for (i = (int32_t)numOfBlocks - 1; i >= 0; i--) {
@@ -1674,7 +1682,7 @@ Std_ReturnType Fee_Backup_SetNextBankAdmin_Main(void) {
   Number += 1u; /* as exception case, always increase the number by 1 */
   bank = &config->Banks[nextBank];
 
-  if (bankAdmin->Info.Number != ((uint16_t)~bankAdmin->Info.InvNumber)) {
+  if (bankAdmin->Info.Number != ((uint32_t)~bankAdmin->Info.InvNumber)) {
     ASLOG(FEE, ("set next bank %d Number = %d\n", nextBank, Number));
     workAdmin->Info.Number = Number;
     workAdmin->Info.InvNumber = ~Number;
@@ -1709,7 +1717,7 @@ Std_ReturnType Fee_Backup_SetNextBankAdmin_End(void) {
   Fee_BankAdminType *bankAdmin = &actAdmin[1];
   Fee_BankAdminType *workAdmin = &actAdmin[2];
 
-  if (bankAdmin->Info.Number != ((uint16_t)~bankAdmin->Info.InvNumber)) {
+  if (bankAdmin->Info.Number != ((uint32_t)~bankAdmin->Info.InvNumber)) {
     bankAdmin->Info = workAdmin->Info;
   } else if (bankAdmin->HeaderMagic.MagicNumber != (~bankAdmin->HeaderMagic.InvMagicNumber)) {
     bankAdmin->HeaderMagic = workAdmin->HeaderMagic;
@@ -2121,6 +2129,7 @@ Std_ReturnType Fee_Read(uint16_t blockNumber, uint16_t blockOffset, uint8_t *dat
 
   DET_VALIDATE((blockNumber > 0) && ((blockNumber - 1) < config->NumOfBlocks), 0x02,
                FEE_E_INVALID_BLOCK_NO, return E_NOT_OK);
+  DET_VALIDATE(NULL != dataBufferPtr, 0x02, FEE_E_PARAM_POINTER, return E_NOT_OK);
   DET_VALIDATE(config->Blocks[blockNumber - 1].BlockSize >= length, 0x02, FEE_E_INVALID_BLOCK_LEN,
                return E_NOT_OK);
   DET_VALIDATE(config->Blocks[blockNumber - 1].BlockSize >= ((uint32_t)blockOffset + length), 0x02,
@@ -2163,6 +2172,7 @@ Std_ReturnType Fee_Write(uint16_t blockNumber, const uint8_t *dataBufferPtr) {
 
   DET_VALIDATE((blockNumber > 0) && ((blockNumber - 1) < config->NumOfBlocks), 0x03,
                FEE_E_INVALID_BLOCK_NO, return E_NOT_OK);
+  DET_VALIDATE(NULL != dataBufferPtr, 0x03, FEE_E_PARAM_POINTER, return E_NOT_OK);
 
 #ifdef FLS_DIRECT_ACCESS
   if (FEE_INVALID_ADDRESS != config->BlockContexts[blockNumber - 1u].Address) {

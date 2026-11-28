@@ -1390,6 +1390,7 @@ static void SomeIp_MainClientRxTpMsg(const SomeIp_ClientServiceType *config) {
         ASLOG(SOMEIPE,
               ("client method %x:%x:%x:%d Rx Tp msg timeout, offset %d\n", config->ServiceId,
                method->MethodId, var->ClientId, var->SessionId, var->Offset));
+        method->OnTpCopyRxData(requestId, NULL);
         method->OnError(requestId, SOMEIP_E_TIMEOUT);
         SQP_CRM_AND_FREE(RxTpMsg);
       }
@@ -1885,6 +1886,7 @@ Std_ReturnType SomeIp_ConnectionRxControl(uint16_t serviceId, uint16_t conId,
             PduInfo.MetaDataPtr = (uint8_t *)&RemoteAddr;
             ret = SomeIp_HeaderIndication(connection->RxPduId, &PduInfo, &buffer->Length);
             if (E_OK == ret) {
+              buffer->Length += 8; /* SOME/IP length field excludes the first 8 header bytes */
               if (buffer->Length > buffer->Size) {
                 ASLOG(SOMEIPE, ("SOMEIP message payload length %d exceeds buffer size %d\n",
                                 buffer->Length, buffer->Size));
@@ -1892,10 +1894,26 @@ Std_ReturnType SomeIp_ConnectionRxControl(uint16_t serviceId, uint16_t conId,
                   PduInfo.SduLength = buffer->Length - buffer->Offset;
                   if (PduInfo.SduLength > buffer->Size) {
                     PduInfo.SduLength = buffer->Size;
-                    /* drop the rest */
-                    (void)SoAd_ControlRecv(connection->SoConId, buffer->Data, &PduInfo.SduLength);
-                    buffer->Offset += PduInfo.SduLength;
                   }
+                  /* drop the rest of the oversized message */
+                  (void)SoAd_ControlRecv(connection->SoConId, buffer->Data, &PduInfo.SduLength);
+                  if (0u == PduInfo.SduLength) {
+                    /* no more data can be drained for now */
+                    break;
+                  }
+                  buffer->Offset += PduInfo.SduLength;
+                }
+                /* drop whatever is left in the socket buffer, so that the
+                 * stream re-syncs at the next message header */
+                while (buffer->Length > buffer->Size) {
+                  PduInfo.SduLength = buffer->Size;
+                  if ((E_OK !=
+                       SoAd_ControlRecv(connection->SoConId, buffer->Data, &PduInfo.SduLength)) ||
+                      (0u == PduInfo.SduLength)) {
+                    /* recv failed or no more data available for now */
+                    break;
+                  }
+                  buffer->Length -= PduInfo.SduLength;
                 }
                 buffer->Offset = 0u;
                 ret = E_NOT_OK;

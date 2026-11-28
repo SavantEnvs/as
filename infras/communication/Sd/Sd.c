@@ -355,15 +355,15 @@ static Std_ReturnType Sd_DecodeHeader(const uint8_t *data, uint32_t length, Sd_H
   if (E_OK == ret) {
     header->Length =
       ((uint32_t)data[4] << 24) + ((uint32_t)data[5] << 16) + ((uint32_t)data[6] << 8) + data[7];
-    if ((header->Length + 8u) == length) {
+    if (header->Length == ((uint32_t)length - 8u)) { /* length >= 28 is checked, no overflow */
       header->LengthOfEntries = ((uint32_t)data[20] << 24) + ((uint32_t)data[21] << 16) +
                                 ((uint32_t)data[22] << 8) + data[23];
-      if ((28u + header->LengthOfEntries) <= length) {
+      if (header->LengthOfEntries <= ((uint32_t)length - 28u)) {
         header->LengthOfOptions = ((uint32_t)data[24u + header->LengthOfEntries] << 24) +
                                   ((uint32_t)data[25u + header->LengthOfEntries] << 16) +
                                   ((uint32_t)data[26u + header->LengthOfEntries] << 8) +
                                   data[27u + header->LengthOfEntries];
-        if ((28u + header->LengthOfEntries + header->LengthOfOptions) != length) {
+        if (header->LengthOfOptions != ((uint32_t)length - 28u - header->LengthOfEntries)) {
           ASLOG(SDE, ("invalid SD lengthOfOptions %d\n", header->LengthOfEntries));
           ret = E_NOT_OK;
         }
@@ -1059,7 +1059,7 @@ static void Sd_HandleMsg(const Sd_InstanceType *instance, const PduInfoType *pdu
              RemoteAddr->Addr[1], RemoteAddr->Addr[2], RemoteAddr->Addr[3], RemoteAddr->Port));
 
   ret = Sd_DecodeHeader(data, length, &header);
-  for (i = 0u; (i < header.LengthOfEntries) && (E_OK == ret);) {
+  for (i = 0u; ((i + 16u) <= header.LengthOfEntries) && (E_OK == ret);) {
     type = data[24u + i];
     switch (type) {
     case SD_FIND_SERVICE:

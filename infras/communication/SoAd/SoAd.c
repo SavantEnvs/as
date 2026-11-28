@@ -188,6 +188,11 @@ static Std_ReturnType SoAd_SocketRecvStart(SoAd_SoConIdType soConId) {
             } else {
               conG->IF->RxIndication(connection->RxPduId, &PduInfo);
             }
+          } else {
+            /* for TCP the stream is out of sync and can never recover */
+            ASLOG(SOADE, ("[%u] header indication failed, close\n", soConId));
+            (void)SoAd_CloseSoCon(soConId, TRUE);
+            ret = E_NOT_OK;
           }
         } else {
           if (NULL != conG->IF->RxIndication) {
@@ -633,6 +638,8 @@ Std_ReturnType SoAd_CloseSoCon(SoAd_SoConIdType soConId, boolean abort) {
         Net_MemFree(context->Data);
         context->Data = NULL;
       }
+      context->Length = 0;
+      context->Flag = 0;
       if (conG->SoConModeChgNotification) {
         conG->SoConModeChgNotification(soConId, SOAD_SOCON_OFFLINE);
       }

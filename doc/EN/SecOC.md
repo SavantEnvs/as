@@ -32,7 +32,7 @@ comments: true
 6. [Build and run a demo](#6-build-and-run-a-demo)
 7. [Key notes and gotchas](#7-key-notes-and-gotchas)
 8. [Troubleshooting](#8-troubleshooting)
-9. [Known limitations and code review findings](#9-known-limitations-and-code-review-findings)
+9. [Known limitations](#9-known-limitations)
 10. [Related documents](#10-related-documents)
 
 ---
@@ -154,7 +154,7 @@ referenced by `TxProc[]` / `RxProc[]`:
 | --- | --- | --- |
 | `MacGen[].name = MACGEN0` | `Family: AES`, `Mode: ECB`, 16-byte `Key` | the MAC primitive |
 | `Jobs[].name = SECOC_MACGEN_0` | `ServiceType: MAC_GENERATE` | referenced by `TxAuthServiceConfigRef` **and** `RxAuthServiceConfigRef` |
-| `Jobs[].name = SECOC_MACVER_0` | `ServiceType: MAC_VERIFY` | present in the shipped JSON but unused, see section 9 |
+| `Jobs[].name = SECOC_MACVER_0` | `ServiceType: MAC_VERIFY` | present in the shipped JSON but unused |
 
 `AuthInfoLength` must equal the key length in bits (16 bytes -> 128), otherwise
 `Csm_MacGenerate` rejects the FINISH call (`Csm.c`, `macLength` check).
@@ -218,7 +218,7 @@ transmit *and* receive procs share one numbering space per direction) and, when
 Std_ReturnType __weak SecOC_GetFreshness_FreshnessValue0(uint8_t *FreshnessValue,
                                                          uint32_t *FreshnessValueLength) {
   static uint16_t fvFreshnessValue0 = 0;
-  uint16_t fv = fvFreshnessValue0 / 2;          /* note: /2 - see section 9 */
+  uint16_t fv = fvFreshnessValue0 / 2;          /* note: /2 (dummy freshness generator) */
   (void)memset(FreshnessValue, 0, *FreshnessValueLength / 8);
   FreshnessValue[0] = (fv >> 8) & 0xFFu;
   FreshnessValue[1] = fv & 0xFFu;
@@ -518,9 +518,7 @@ input.
 
 ---
 
-## 9. Known limitations and code review findings
-
-### 9.1 Functional limitations
+## 9. Known limitations
 
 * **No real freshness check on Rx.** `SecOC_ProcRx` calls
   `SecOC_GetTxFreshness()` (`SecOC.c:163`) to obtain the freshness value it
@@ -557,25 +555,6 @@ input.
 * **`SECOC_USE_PB_CONFIG` is all-or-nothing post-build.** `SecOC_Init(NULL)` is
   what EcuM passes, and without the macro the passed pointer is ignored
   completely.
-
-### 9.2 Code review findings
-
-| # | Where | Finding |
-| --- | --- | --- |
-| 1 | `SecOC.c:154` | `memcpy` into the working buffer uses `dataLength` **taken from the received header**, after only checking `SduLength + 2 + FV + Auth < bufLen`. A corrupt or malicious frame with a large header value causes an out-of-bounds *read* and then forwards `SduLength = dataLength` up to Com. There is no check that `2 + AuthPduHeaderLength + dataLength + 9 <= SduLength`. For a security module this is the most serious issue found. |
-| 2 | `SecOC.c:163` | Rx verification uses `SecOC_GetTxFreshness` instead of a receive-side freshness manager (see 9.1). |
-| 3 | `SecOC.c:305-307` | `SecOC_RxIndication` only logs when the state is not `IDLE`, then overwrites the buffer anyway. A frame arriving while the previous one is still in `RECEIVED` silently destroys it. |
-| 4 | `SecOC.c:256-276` | `SecOC_IfTransmit` does not check the state either: nothing prevents a new request from clobbering an in-flight secured PDU. |
-| 5 | `SecOC.c:411,422` | `SecOC_MainFunctionTx/Rx` dereference `SECOC_CONFIG->numTxPduProcs` without a `NULL` check, so calling them before `SecOC_Init` is a hard fault instead of a DET report. |
-| 6 | `SecOC.c:266-269` | The buffer-size validation reports `SECOC_E_PARAM_POINTER` for a length problem; should be a length/id error code. Same pattern at `:302` and `:355`. |
-| 7 | `SecOC.h` | Seven declared APIs have no implementation (`SecOC_TpTransmit`, `SecOC_TpTxConfirmation`, `SecOC_DeInit`, `SecOC_GetRxFreshness`, `SecOC_GetRxFreshnessAuthData`, `SecOC_GetTxFreshnessTruncData`, `SecOC_SPduTxConfirmation`). Only `SecOC_GetTxFreshness` exists, in `SecOC_Callout.c`. |
-| 8 | `SecOC.py:80,109-115` | Buffer sizing uses floor division (`AuthInfoLength // 8`), while the runtime uses `(x + 7) >> 3`. Any bit length that is not a multiple of 8 under-sizes the buffer by up to one byte per field. |
-| 9 | `SecOC.py:172-176` | The `GenDummy` freshness generator divides by two and writes only 2 bytes (see 9.1). |
-| 10 | `SecOC.py:26,30` | `MainFunctionPeriod` only produces a macro that no SecOC code uses; the real period comes from `EcuM_DriverMainFastList`. Misleading for integrators. |
-| 11 | `Csm.c:101` | `Csm_MacVerify` requires the job's `serviceType` to be `CRYPTO_MAC_GENERATE`, so a `MAC_VERIFY` job (`SECOC_MACVER_0`) can never be used through that API. SecOC avoids the problem by comparing bytes itself, which is why the verify job is dead configuration. |
-| 12 | `SecOC_Callout.c:32` | The freshness getter validates `*FreshnessValueLength >= FrVal->length` but then passes the caller's length straight to the generated function, which may be larger than the configured length - the generated dummy then `memset`s more bytes than the FV actually occupies. |
-
----
 
 ## 10. Related documents
 

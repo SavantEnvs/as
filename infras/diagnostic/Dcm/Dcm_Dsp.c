@@ -1179,7 +1179,7 @@ Std_ReturnType Dcm_DspClearDTC(Dcm_MsgContextType *msgContext, Dcm_NegativeRespo
 #ifdef DCM_USE_SERVICE_READ_DTC_INFORMATION
 Std_ReturnType Dem_DspReportNumberOfDTCByStatusMask_Impl(Dcm_MsgContextType *msgContext,
                                                          Dcm_NegativeResponseCodeType *nrc,
-                                                         Dem_DTCOriginType dTCOrigin) {
+                                                         Dem_DTCOriginType dtcOrigin) {
   Std_ReturnType r = E_NOT_OK;
   uint8_t statusMask;
   uint16_t NumberOfFilteredDTC = 0;
@@ -1187,11 +1187,11 @@ Std_ReturnType Dem_DspReportNumberOfDTCByStatusMask_Impl(Dcm_MsgContextType *msg
   if (2 == msgContext->ReqDataLen) {
     statusMask = msgContext->ReqData[1];
 
-    r = Dem_SetDTCFilter(0, statusMask, DEM_DTC_FORMAT_UDS, dTCOrigin, FALSE, 0, FALSE);
+    r = Dem_SetDTCFilter(0, statusMask, DEM_DTC_FORMAT_UDS, dtcOrigin, FALSE, 0, FALSE);
     if (E_OK == r) {
       r = Dem_GetNumberOfFilteredDTC(0, &NumberOfFilteredDTC);
       if (E_OK == r) {
-        r = Dem_GetDTCStatusAvailabilityMask(0, &statusMask, dTCOrigin);
+        r = Dem_GetDTCStatusAvailabilityMask(0, &statusMask, dtcOrigin);
       }
     }
 
@@ -1224,7 +1224,7 @@ Std_ReturnType Dem_DspReportNumberOfMirrorMemoryDTCByStatusMask(Dcm_MsgContextTy
 
 Std_ReturnType Dem_DspReportDTCByStatusMask_Impl(Dcm_MsgContextType *msgContext,
                                                  Dcm_NegativeResponseCodeType *nrc,
-                                                 Dem_DTCOriginType dTCOrigin) {
+                                                 Dem_DTCOriginType dtcOrigin) {
   Std_ReturnType r = E_NOT_OK;
   uint8_t statusMask;
   uint16_t NumberOfFilteredDTC = 0;
@@ -1235,12 +1235,11 @@ Std_ReturnType Dem_DspReportDTCByStatusMask_Impl(Dcm_MsgContextType *msgContext,
   if (2 == msgContext->ReqDataLen) {
     statusMask = msgContext->ReqData[1];
 
-    r = Dem_SetDTCFilter(0, statusMask, DEM_DTC_FORMAT_UDS, DEM_DTC_ORIGIN_PRIMARY_MEMORY, FALSE, 0,
-                         FALSE);
+    r = Dem_SetDTCFilter(0, statusMask, DEM_DTC_FORMAT_UDS, dtcOrigin, FALSE, 0, FALSE);
     if (E_OK == r) {
       r = Dem_GetNumberOfFilteredDTC(0, &NumberOfFilteredDTC);
       if (E_OK == r) {
-        r = Dem_GetDTCStatusAvailabilityMask(0, &statusMask, dTCOrigin);
+        r = Dem_GetDTCStatusAvailabilityMask(0, &statusMask, dtcOrigin);
       }
     }
 
@@ -1371,7 +1370,7 @@ Std_ReturnType Dem_DspReportDTCSnapshotRecordByDTCNumber(Dcm_MsgContextType *msg
 
 Std_ReturnType Dem_DspReportDTCExtendedDataRecordByDTCNumber_Impl(Dcm_MsgContextType *msgContext,
                                                                   Dcm_NegativeResponseCodeType *nrc,
-                                                                  Dem_DTCOriginType dTCOrigin) {
+                                                                  Dem_DTCOriginType dtcOrigin) {
   Std_ReturnType r = E_NOT_OK;
   uint32_t DTCNumber;
   uint8_t RecordNumber;
@@ -1381,7 +1380,7 @@ Std_ReturnType Dem_DspReportDTCExtendedDataRecordByDTCNumber_Impl(Dcm_MsgContext
     DTCNumber = ((uint32_t)msgContext->ReqData[1] << 16) + ((uint32_t)msgContext->ReqData[2] << 8) +
                 msgContext->ReqData[3];
     RecordNumber = msgContext->ReqData[4];
-    r = Dem_SelectDTC(0, DTCNumber, DEM_DTC_FORMAT_UDS, dTCOrigin);
+    r = Dem_SelectDTC(0, DTCNumber, DEM_DTC_FORMAT_UDS, dtcOrigin);
     if (E_OK == r) {
       r = Dem_SelectFreezeFrameData(0, RecordNumber);
     }
@@ -1460,6 +1459,315 @@ Std_ReturnType Dem_DspReportSupportedDTC(Dcm_MsgContextType *msgContext,
     } else {
       *nrc = DCM_E_REQUEST_OUT_OF_RANGE;
     }
+  } else {
+    *nrc = DCM_E_INCORRECT_MESSAGE_LENGTH_OR_INVALID_FORMAT;
+  }
+
+  return r;
+}
+
+/* 0x07 reportNumberOfDTCBySeverityMaskRecord @ISO_14229-1_2013 11.3.1.8 */
+Std_ReturnType Dem_DspReportNumberOfDTCBySeverityMaskRecord(Dcm_MsgContextType *msgContext,
+                                                            Dcm_NegativeResponseCodeType *nrc) {
+  Std_ReturnType r = E_NOT_OK;
+  uint16_t NumberOfFilteredDTC = 0;
+  Dem_UdsStatusByteType udsStatus;
+
+  if (3 == msgContext->ReqDataLen) {
+    r = Dem_SetDTCFilter(0, msgContext->ReqData[2], DEM_DTC_FORMAT_UDS,
+                         DEM_DTC_ORIGIN_PRIMARY_MEMORY, TRUE, msgContext->ReqData[1], FALSE);
+    if (E_OK == r) {
+      r = Dem_GetNumberOfFilteredDTC(0, &NumberOfFilteredDTC);
+      if (E_OK == r) {
+        r = Dem_GetDTCStatusAvailabilityMask(0, &udsStatus, DEM_DTC_ORIGIN_PRIMARY_MEMORY);
+      }
+    }
+
+    if (E_OK == r) {
+      if (5 <= msgContext->ResMaxDataLen) {
+        msgContext->ResData[0] = msgContext->ReqData[0];
+        msgContext->ResData[1] = udsStatus;
+        /* DTCFormatIdentifier = ISO_14229-1_DTCFormat */
+        msgContext->ResData[2] = 0x01;
+        msgContext->ResData[3] = (uint8_t)((NumberOfFilteredDTC >> 8) & 0xFF);
+        msgContext->ResData[4] = (uint8_t)(NumberOfFilteredDTC & 0xFF);
+        msgContext->ResDataLen = 5;
+      } else {
+        *nrc = DCM_E_RESPONSE_TOO_LONG;
+        r = E_NOT_OK;
+      }
+    } else {
+      *nrc = DCM_E_REQUEST_OUT_OF_RANGE;
+    }
+  } else {
+    *nrc = DCM_E_INCORRECT_MESSAGE_LENGTH_OR_INVALID_FORMAT;
+  }
+
+  return r;
+}
+
+/* 0x08 reportDTCBySeverityMaskRecord @ISO_14229-1_2013 11.3.1.9, the
+ * DTCAndSeverityRecord is [ DTCSeverity, DTCFunctionalUnit, DTC high/middle/low,
+ * statusOfDTC ] like the example #9 of 11.3.5.10 */
+Std_ReturnType Dem_DspReportDTCBySeverityMaskRecord(Dcm_MsgContextType *msgContext,
+                                                    Dcm_NegativeResponseCodeType *nrc) {
+  Std_ReturnType r = E_NOT_OK;
+  uint16_t NumberOfFilteredDTC = 0;
+  Dem_UdsStatusByteType udsStatus;
+  uint32_t DTCNumber;
+  uint8_t DTCStatus;
+  Dem_DTCSeverityType DTCSeverity;
+  uint8_t DTCFunctionalUnit;
+  uint16_t i;
+
+  if (3 == msgContext->ReqDataLen) {
+    r = Dem_SetDTCFilter(0, msgContext->ReqData[2], DEM_DTC_FORMAT_UDS,
+                         DEM_DTC_ORIGIN_PRIMARY_MEMORY, TRUE, msgContext->ReqData[1], FALSE);
+    if (E_OK == r) {
+      r = Dem_GetNumberOfFilteredDTC(0, &NumberOfFilteredDTC);
+      if (E_OK == r) {
+        r = Dem_GetDTCStatusAvailabilityMask(0, &udsStatus, DEM_DTC_ORIGIN_PRIMARY_MEMORY);
+      }
+    }
+
+    if (E_OK == r) {
+      if ((NumberOfFilteredDTC * 6 + 2) <= msgContext->ResMaxDataLen) {
+        msgContext->ResData[0] = msgContext->ReqData[0];
+        msgContext->ResData[1] = udsStatus;
+        for (i = 0; (i < NumberOfFilteredDTC) && (E_OK == r); i++) {
+          r = Dem_GetNextFilteredDTCAndSeverity(0, &DTCNumber, &DTCStatus, &DTCSeverity,
+                                                &DTCFunctionalUnit);
+          if (E_OK == r) {
+            msgContext->ResData[2 + 6 * i] = DTCSeverity;
+            msgContext->ResData[3 + 6 * i] = DTCFunctionalUnit;
+            msgContext->ResData[4 + 6 * i] = (uint8_t)((DTCNumber >> 16) & 0xFF);
+            msgContext->ResData[5 + 6 * i] = (uint8_t)((DTCNumber >> 8) & 0xFF);
+            msgContext->ResData[6 + 6 * i] = (uint8_t)(DTCNumber & 0xFF);
+            msgContext->ResData[7 + 6 * i] = DTCStatus;
+          }
+        }
+        if (E_OK == r) {
+          msgContext->ResDataLen = NumberOfFilteredDTC * 6 + 2;
+        }
+      } else {
+        *nrc = DCM_E_RESPONSE_TOO_LONG;
+        r = E_NOT_OK;
+      }
+    } else {
+      *nrc = DCM_E_REQUEST_OUT_OF_RANGE;
+    }
+  } else {
+    *nrc = DCM_E_INCORRECT_MESSAGE_LENGTH_OR_INVALID_FORMAT;
+  }
+
+  return r;
+}
+
+/* 0x09 reportSeverityInformationOfDTC @ISO_14229-1_2013 11.3.1.10, response
+ * layout of 11.3.5.11 example #10 */
+Std_ReturnType Dem_DspReportSeverityInformationOfDTC(Dcm_MsgContextType *msgContext,
+                                                     Dcm_NegativeResponseCodeType *nrc) {
+  Std_ReturnType r = E_NOT_OK;
+  uint32_t DTCNumber;
+  uint32_t DTCRequested;
+  uint8_t DTCStatus;
+  Dem_DTCSeverityType DTCSeverity;
+  uint8_t DTCFunctionalUnit;
+  Dem_UdsStatusByteType udsStatus;
+
+  if (4 == msgContext->ReqDataLen) {
+    DTCRequested = ((uint32_t)msgContext->ReqData[1] << 16) +
+                   ((uint32_t)msgContext->ReqData[2] << 8) + msgContext->ReqData[3];
+    r = Dem_SetDTCFilter(0, 0, DEM_DTC_FORMAT_UDS, DEM_DTC_ORIGIN_PRIMARY_MEMORY, FALSE, 0, FALSE);
+    if (E_OK == r) {
+      while (E_OK == (r = Dem_GetNextFilteredDTCAndSeverity(0, &DTCNumber, &DTCStatus, &DTCSeverity,
+                                                            &DTCFunctionalUnit))) {
+        if (DTCNumber == DTCRequested) {
+          break;
+        }
+      }
+    }
+
+    if (E_OK == r) {
+      r = Dem_GetDTCStatusAvailabilityMask(0, &udsStatus, DEM_DTC_ORIGIN_PRIMARY_MEMORY);
+    }
+
+    if (E_OK == r) {
+      if (8 <= msgContext->ResMaxDataLen) {
+        msgContext->ResData[0] = msgContext->ReqData[0];
+        msgContext->ResData[1] = udsStatus;
+        msgContext->ResData[2] = DTCSeverity;
+        msgContext->ResData[3] = DTCFunctionalUnit;
+        msgContext->ResData[4] = (uint8_t)((DTCNumber >> 16) & 0xFF);
+        msgContext->ResData[5] = (uint8_t)((DTCNumber >> 8) & 0xFF);
+        msgContext->ResData[6] = (uint8_t)(DTCNumber & 0xFF);
+        msgContext->ResData[7] = DTCStatus;
+        msgContext->ResDataLen = 8;
+      } else {
+        *nrc = DCM_E_RESPONSE_TOO_LONG;
+        r = E_NOT_OK;
+      }
+    } else {
+      *nrc = DCM_E_REQUEST_OUT_OF_RANGE;
+    }
+  } else {
+    *nrc = DCM_E_INCORRECT_MESSAGE_LENGTH_OR_INVALID_FORMAT;
+  }
+
+  return r;
+}
+
+/* 0x0B/0x0C/0x0D/0x0E reportFirstTestFailedDTC/reportFirstConfirmedDTC/
+ * reportMostRecentTestFailedDTC/reportMostRecentConfirmedDTC
+ * @ISO_14229-1_2013 11.3.1.12 and 11.3.1.13. Answered only from the Dem
+ * occurrence-order queues (doc/EN/Dem.md 3.7): there is no fallback to the
+ * config-index ordered filtered list, a request the queues cannot answer is
+ * rejected with requestOutOfRange */
+static Std_ReturnType Dcm_DspReportFirstOrMostRecentDTC(Dcm_MsgContextType *msgContext,
+                                                        Dcm_NegativeResponseCodeType *nrc,
+                                                        Dem_DTCRequestType dtcRequest) {
+  Std_ReturnType r = E_NOT_OK;
+  uint32_t DTCNumber = 0;
+  uint8_t DTCStatus = 0;
+  Dem_UdsStatusByteType udsStatus;
+
+  if (1 == msgContext->ReqDataLen) {
+    r = Dem_GetDTCAndStatusByOccurrenceTime(0, dtcRequest, &DTCNumber, &DTCStatus);
+    if (E_OK == r) {
+      if (6 <= msgContext->ResMaxDataLen) {
+        r = Dem_GetDTCStatusAvailabilityMask(0, &udsStatus, DEM_DTC_ORIGIN_PRIMARY_MEMORY);
+        if (E_OK == r) {
+          msgContext->ResData[0] = msgContext->ReqData[0];
+          msgContext->ResData[1] = udsStatus;
+          msgContext->ResData[2] = (uint8_t)((DTCNumber >> 16) & 0xFF);
+          msgContext->ResData[3] = (uint8_t)((DTCNumber >> 8) & 0xFF);
+          msgContext->ResData[4] = (uint8_t)(DTCNumber & 0xFF);
+          msgContext->ResData[5] = DTCStatus;
+          msgContext->ResDataLen = 6;
+        }
+      } else {
+        *nrc = DCM_E_RESPONSE_TOO_LONG;
+        r = E_NOT_OK;
+      }
+    } else {
+      *nrc = DCM_E_REQUEST_OUT_OF_RANGE;
+    }
+  } else {
+    *nrc = DCM_E_INCORRECT_MESSAGE_LENGTH_OR_INVALID_FORMAT;
+  }
+
+  return r;
+}
+
+/* 0x0B ReportFirstTestFailedDTC */
+Std_ReturnType Dem_DspReportFirstTestFailedDTC(Dcm_MsgContextType *msgContext,
+                                               Dcm_NegativeResponseCodeType *nrc) {
+  return Dcm_DspReportFirstOrMostRecentDTC(msgContext, nrc, DEM_FIRST_FAILED_DTC);
+}
+
+/* 0x0C ReportFirstConfirmedDTC */
+Std_ReturnType Dem_DspReportFirstConfirmedDTC(Dcm_MsgContextType *msgContext,
+                                              Dcm_NegativeResponseCodeType *nrc) {
+  return Dcm_DspReportFirstOrMostRecentDTC(msgContext, nrc, DEM_FIRST_DET_CONFIRMED_DTC);
+}
+
+/* 0x0D ReportMostRecentTestFailedDTC */
+Std_ReturnType Dem_DspReportMostRecentTestFailedDTC(Dcm_MsgContextType *msgContext,
+                                                    Dcm_NegativeResponseCodeType *nrc) {
+  return Dcm_DspReportFirstOrMostRecentDTC(msgContext, nrc, DEM_MOST_RECENT_FAILED_DTC);
+}
+
+/* 0x0E ReportMostRecentConfirmedDTC */
+Std_ReturnType Dem_DspReportMostRecentConfirmedDTC(Dcm_MsgContextType *msgContext,
+                                                   Dcm_NegativeResponseCodeType *nrc) {
+  return Dcm_DspReportFirstOrMostRecentDTC(msgContext, nrc, DEM_MOST_REC_DET_CONFIRMED_DTC);
+}
+
+/* 0x14 reportDTCFaultDetectionCounter @ISO_14229-1_2013 11.3.1.19 */
+Std_ReturnType Dem_DspReportDTCFaultDetectionCounter(Dcm_MsgContextType *msgContext,
+                                                     Dcm_NegativeResponseCodeType *nrc) {
+  Std_ReturnType r = E_NOT_OK;
+  uint32_t DTCNumber;
+  sint8_t DTCFaultDetectionCounter;
+  uint16_t resLen;
+  Dem_UdsStatusByteType udsStatus;
+
+  if (1 == msgContext->ReqDataLen) {
+    /* FilterForFaultDetectionCounter: only the DTCs with a positive FDC less than
+     * 0x7F are reported, i.e. the "prefailed" ones (11.3.1.19, Table 278) */
+    r = Dem_SetDTCFilter(0, 0, DEM_DTC_FORMAT_UDS, DEM_DTC_ORIGIN_PRIMARY_MEMORY, FALSE, 0, TRUE);
+    if (E_OK == r) {
+      r = Dem_GetDTCStatusAvailabilityMask(0, &udsStatus, DEM_DTC_ORIGIN_PRIMARY_MEMORY);
+    }
+
+    if (E_OK == r) {
+      msgContext->ResData[0] = msgContext->ReqData[0];
+      msgContext->ResData[1] = udsStatus;
+      resLen = 2;
+      /* Dem_GetNextFilteredDTCAndFDC returns E_NOT_OK when the list is exhausted */
+      while ((resLen + 4 <= msgContext->ResMaxDataLen) &&
+             (E_OK == Dem_GetNextFilteredDTCAndFDC(0, &DTCNumber, &DTCFaultDetectionCounter))) {
+        msgContext->ResData[resLen] = (uint8_t)((DTCNumber >> 16) & 0xFF);
+        msgContext->ResData[resLen + 1] = (uint8_t)((DTCNumber >> 8) & 0xFF);
+        msgContext->ResData[resLen + 2] = (uint8_t)(DTCNumber & 0xFF);
+        msgContext->ResData[resLen + 3] = (uint8_t)DTCFaultDetectionCounter;
+        resLen += 4;
+      }
+      msgContext->ResDataLen = resLen;
+    }
+  } else {
+    *nrc = DCM_E_INCORRECT_MESSAGE_LENGTH_OR_INVALID_FORMAT;
+  }
+
+  return r;
+}
+
+/* 0x17 reportUserDefMemoryDTCByStatusMask @ISO_14229-1_2013 11.3.1.24. The AS
+ * Dem has no user defined memory, therefore only the request length is
+ * validated and NRC 0x31 (requestOutOfRange) is returned, the same as the
+ * reference core17 does for unsupported DTC report subfunctions */
+Std_ReturnType Dem_DspReportUserDefMemoryDTCByStatusMask(Dcm_MsgContextType *msgContext,
+                                                         Dcm_NegativeResponseCodeType *nrc) {
+  Std_ReturnType r = E_NOT_OK;
+
+  /* 19 17 <DTCStatusMask> <memorySelection> */
+  if (3 == msgContext->ReqDataLen) {
+    *nrc = DCM_E_REQUEST_OUT_OF_RANGE;
+  } else {
+    *nrc = DCM_E_INCORRECT_MESSAGE_LENGTH_OR_INVALID_FORMAT;
+  }
+
+  return r;
+}
+
+/* 0x18 reportUserDefMemoryDTCSnapshotRecordByDTCNumber @ISO_14229-1_2013
+ * 11.3.1.25. The AS Dem has no user defined memory, see 0x17 */
+Std_ReturnType
+Dem_DspReportUserDefMemoryDTCSnapshotRecordByDTCNumber(Dcm_MsgContextType *msgContext,
+                                                       Dcm_NegativeResponseCodeType *nrc) {
+  Std_ReturnType r = E_NOT_OK;
+
+  /* 19 18 <DTC> <recordNumber> <memorySelection> */
+  if (6 == msgContext->ReqDataLen) {
+    *nrc = DCM_E_REQUEST_OUT_OF_RANGE;
+  } else {
+    *nrc = DCM_E_INCORRECT_MESSAGE_LENGTH_OR_INVALID_FORMAT;
+  }
+
+  return r;
+}
+
+/* 0x19 reportUserDefMemoryDTCExtDataRecordByDTCNumber @ISO_14229-1_2013
+ * 11.3.1.26. The AS Dem has no user defined memory, see 0x17 */
+Std_ReturnType
+Dem_DspReportUserDefMemoryDTCExtendedDataRecordByDTCNumber(Dcm_MsgContextType *msgContext,
+                                                           Dcm_NegativeResponseCodeType *nrc) {
+  Std_ReturnType r = E_NOT_OK;
+
+  /* 19 19 <DTC> <recordNumber> [<memorySelection>]: the client may or may not
+   * send the memory selection */
+  if ((5 == msgContext->ReqDataLen) || (6 == msgContext->ReqDataLen)) {
+    *nrc = DCM_E_REQUEST_OUT_OF_RANGE;
   } else {
     *nrc = DCM_E_INCORRECT_MESSAGE_LENGTH_OR_INVALID_FORMAT;
   }
@@ -1792,7 +2100,9 @@ Std_ReturnType Dcm_DspReadDataByPeriodicIdentifier(Dcm_MsgContextType *msgContex
       reload = 0;
       break;
     default:
-      *nrc = DCM_E_SUB_FUNCTION_NOT_SUPPORTED;
+      /* 0x2A has no sub-function, the unsupported transmissionMode is
+       * reported with requestOutOfRange (10.5.4) */
+      *nrc = DCM_E_REQUEST_OUT_OF_RANGE;
       r = E_NOT_OK;
       break;
     }
@@ -1877,7 +2187,8 @@ static Std_ReturnType Dcm_DspIsMemoryValid(uint8_t addressAndLengthFormat, uint8
     for (i = 0u; (E_NOT_OK == r) && (i < memoryConfig->NumOfMems); i++) {
       if ((0u != (attr & memoryConfig->Mems[i].Attr)) &&
           (memoryAddress >= memoryConfig->Mems[i].Low) &&
-          ((memoryAddress + memorySize) <= memoryConfig->Mems[i].High)) {
+          (memoryAddress < memoryConfig->Mems[i].High) &&
+          (memorySize <= (memoryConfig->Mems[i].High - memoryAddress))) {
         r = Dcm_DslServiceSesSecPhyFuncCheck(context, &memoryConfig->Mems[i].SesSecAccess, nrc);
       }
     }
@@ -1934,6 +2245,7 @@ Std_ReturnType Dcm_DspReadMemoryByAddress(Dcm_MsgContextType *msgContext,
   if (E_OK == r) {
     if (memorySize > msgContext->ResMaxDataLen) {
       *nrc = DCM_E_RESPONSE_TOO_LONG;
+      r = E_NOT_OK;
     }
   }
 
@@ -2213,17 +2525,30 @@ Std_ReturnType Dcm_DspVerifyCertificateUnidirectional(Dcm_OpStatusType opStatus,
   const uint8_t *publicKey;
   uint16_t signatureLen = 0;
   const uint8_t *signature;
-  if (0x00 != dataIn[0]) {
+
+  if (dataInLen < 5u) {
+    r = E_NOT_OK;
+    *errorCode = DCM_E_INCORRECT_MESSAGE_LENGTH_OR_INVALID_FORMAT;
+  } else if (0x00 != dataIn[0]) {
     r = E_NOT_OK;
     *errorCode = DCM_E_REQUEST_OUT_OF_RANGE;
+  } else {
+    /* header is valid */
   }
 
   if (E_OK == r) {
     publicKey = &dataIn[3];
     publicKeyLen = ((uint16_t)dataIn[1] << 8) + dataIn[2];
+    if (publicKeyLen > (uint16_t)(dataInLen - 5u)) {
+      r = E_NOT_OK;
+      *errorCode = DCM_E_INCORRECT_MESSAGE_LENGTH_OR_INVALID_FORMAT;
+    }
+  }
+
+  if (E_OK == r) {
     signature = &dataIn[5 + publicKeyLen];
     signatureLen = ((uint16_t)dataIn[3 + publicKeyLen] << 8) + dataIn[4 + publicKeyLen];
-    if ((publicKeyLen + signatureLen + 5) != dataInLen) {
+    if (((uint32_t)publicKeyLen + signatureLen + 5u) != dataInLen) {
       r = E_NOT_OK;
       *errorCode = DCM_E_INCORRECT_MESSAGE_LENGTH_OR_INVALID_FORMAT;
     }

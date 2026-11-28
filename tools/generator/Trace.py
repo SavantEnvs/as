@@ -28,7 +28,7 @@ def Gen_Trace(cfg, dir):
     # let's support maximum 4096 events
     nBits = None
     for i in range(1, 13):
-        if (1 << i) > len(cfg["Events"]):
+        if (1 << i) >= len(cfg["Events"]):
             nBits = i
             break
     if nBits is None:

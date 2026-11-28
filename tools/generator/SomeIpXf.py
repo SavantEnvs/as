@@ -184,7 +184,7 @@ def SomeIpXfDecode(typ, structs, buffer, bufferSize, data, **kwargs):
     elif typCatlog in ["Struct"]:
         return f"SomeIpXf_Decode{typCatlog}({buffer}, {bufferSize}, &{data}, &SomeIpXf_Struct{typ_}Def)"
     elif typCatlog in ["StructArray"]:
-        return f"SomeIpXf_Decode{typCatlog}({buffer}, {bufferSize}, &{data}, &SomeIpXf_Struct{typ_}Def), &{kwargs['Length']})"
+        return f"SomeIpXf_Decode{typCatlog}({buffer}, {bufferSize}, {data}, &SomeIpXf_Struct{typ_}Def, &{kwargs['Length']})"
     raise Exception("unsupported type catlog: %s" % (typCatlog))
 
 
@@ -206,7 +206,7 @@ def SomeIpXfEncode(typ, structs, buffer, bufferSize, data, **kwargs):
     elif typCatlog in ["Struct"]:
         return f"SomeIpXf_Encode{typCatlog}({buffer}, {bufferSize}, {ref}{data}, &SomeIpXf_Struct{typ_}Def)"
     elif typCatlog in ["StructArray"]:
-        return f"SomeIpXf_Encode{typCatlog}({buffer}, {bufferSize}, {ref}{data}, &SomeIpXf_Struct{typ_}Def), sizeof({data})/sizeof({data}[0])"
+        return f"SomeIpXf_Encode{typCatlog}({buffer}, {bufferSize}, {data}, &SomeIpXf_Struct{typ_}Def, sizeof({data})/sizeof({data}[0]))"
     raise Exception("unsupported type catlog: %s" % (typCatlog))
 
 

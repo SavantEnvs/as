@@ -67,7 +67,11 @@ def Gen_SoAd(cfg, dir):
     headerMaxLen = 1
     for GID, sock in enumerate(cfg["Sockets"]):
         headerLen = 0
-        if sock["Up"] == "DoIP":
+        if sock["Protocol"] == "UDP":
+            # a UDP datagram is atomic and always read as a whole, the header
+            # check is done by the upper layer in RxIndication
+            headerLen = 0
+        elif sock["Up"] == "DoIP":
             headerLen = 8
         elif sock["Up"] == "SD":
             headerLen = 8

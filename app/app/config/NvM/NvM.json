@@ -75,6 +75,20 @@
             "Data": [
                 { "Name": "AttemptCounter", "Type": "uint8", "Default": "0" }
             ]
+        },
+        {
+            "Name": "Dem_NvmDtcFailedOrderQueue",
+            "NumberOfWriteCycles": 100000,
+            "Data": [
+                { "Name": "DtcId", "Repeat": 12, "Type": "uint16", "Default": "[0xFFFF]*12" }
+            ]
+        },
+        {
+            "Name": "Dem_NvmDtcConfirmedOrderQueue",
+            "NumberOfWriteCycles": 100000,
+            "Data": [
+                { "Name": "DtcId", "Repeat": 6, "Type": "uint16", "Default": "[0xFFFF]*6" }
+            ]
         }
     ]
 }

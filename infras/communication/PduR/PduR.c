@@ -357,9 +357,9 @@ void PduR_GwRxIndication(PduIdType pathId, Std_ReturnType result) {
 
   ASLOG(PDUR, ("PduR_GwRxIndication %d\n", pathId));
   if (NULL != RoutingPath->DestTxBufferRef) {
+    buffer = RoutingPath->DestTxBufferRef;
     for (i = 0; (i < RoutingPath->NumOfDestPdus) && (E_OK == ret); i++) {
       DestPduRef = &RoutingPath->DestPduRef[i];
-      buffer = RoutingPath->DestTxBufferRef;
       if ((E_OK == result) && (NULL != buffer->Data)) {
         PduInfo.SduDataPtr = buffer->Data;
         PduInfo.SduLength = buffer->Size;

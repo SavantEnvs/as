@@ -31,7 +31,6 @@ comments: true
 6. [Build and run a demo](#6-build-and-run-a-demo)
 7. [Key notes and gotchas](#7-key-notes-and-gotchas)
 8. [Troubleshooting](#8-troubleshooting)
-9. [Known limitations](#9-known-limitations)
 
 ---
 
@@ -317,6 +316,11 @@ flowchart TD
 `CanIf_TxConfirmation(swPduHandle)`, which forwards `E_OK` to the configured
 `txConfirm` and clears the TX timeout timer.
 
+A queued frame (`CAN_BUSY` retry) that fails again in `CanIf_MainFunction_Fast()`
+is put back to the head of the TX queue and retried on the next cycle - it is
+never dropped, and the pool slot is only freed once the driver accepts the
+frame. `CanIf_SetPduMode()` away from `CANIF_ONLINE` flushes the whole TX queue.
+
 ### 4.4 PDU mode and TX timeout
 
 | Mode | Value | Behaviour in this implementation |
@@ -428,53 +432,6 @@ variable above the global level (default `1` = INFO) enables the messages.
 | Confirmation goes to the wrong module | an Rx macro was passed to `CanIf_Transmit()` (Rx and Tx ids overlap numerically) | use `CANIF_*_TX` |
 
 ---
-
-## 9. Known limitations
-
-Code review findings in `infras/communication/CanIf/CanIf.c` (verified against
-the source, in decreasing severity):
-
-1. **`CanIf_GetPduMode()` has an inverted DET check** (`CanIf.c:349`):
-   `DET_VALIDATE(NULL == PduModePtr, ...)`. With `USE_DET` every *valid* call
-   reports `CANIF_E_PARAM_POINTER` and returns `E_NOT_OK`; a `NULL` pointer is
-   dereferenced. Should be `NULL != PduModePtr`.
-2. **The TX queue is drained under the RX pool macro** (`CanIf.c:501`):
-   the loop is guarded by `#if CANIF_RX_PACKET_POOL_SIZE > 0` while the
-   variables are declared under `CANIF_TX_PACKET_POOL_SIZE > 0`. Two
-   consequences: Rx pool > 0 with Tx pool == 0 does not compile; Tx pool > 0
-   with Rx pool == 0 compiles but never sends the queued PDUs, while
-   `CanIf_Transmit()` still returns `E_OK` (silent frame loss).
-3. **`CanIf_SetTrcvMode()` / `CanIf_GetTrcvMode()` are implemented in the CAN
-   driver** (`infras/mcal/Can/Can.c:123` and `:161`), not in CanIf. They report
-   DET errors with `MODULE_ID_CAN`, and they disappear when
-   `USE_THIRD_PARTY_CAN` is defined (Can.c is not compiled) - any caller then
-   fails at link time.
-4. **`UseTxPool` / the `E2E` list have no runtime effect.** The `bUseTxPool`
-   field is generated and stored but never read; `CanIf_Transmit()` queues
-   *any* PDU on `CAN_BUSY` regardless of the flag. See limitation 2 for why the
-   queue may not be drained at all.
-5. **Queued PDUs lose their per-PDU CAN ID.** `CanIf_MainFunction_Fast()` calls
-   the internal transmit with `MetaDataPtr = NULL`, so a `Dynamic` PDU is sent
-   with the *current* value of `canidOf<NAME>`, not with the value at queue
-   time. For NM PDUs whose ID depends on `NodeId` this can put a frame on the
-   bus with a stale ID.
-6. **Frame logging reads 8 bytes unconditionally** (`CanIf.c:85-88`): a 2-byte
-   frame causes a 6-byte over-read of the caller's buffer. Harmless on the host,
-   a potential fault on target; only active when `AS_LOG_CANIF` is enabled.
-7. **`CANIF_TX_OFFLINE_ACTIVE` is not implemented**: `CanIf_SetPduMode()`
-   accepts it, but the transmit path only allows `CANIF_ONLINE`. The AUTOSAR
-   meaning ("transmit allowed, reception disabled") is not honoured.
-8. **Generator: the HOH range check is off by one** (`CanIf.py:257,262`):
-   `hh > (hrh + NumHrh)` accepts `hh == hrh + NumHrh`, one past the last HOH of
-   the network.
-9. **Generator: the `E2E` key is misleading** (`CanIf.py:229`): it only sets
-   `UseTxPool` for imported Tx messages. Real E2E protection is configured in
-   `E2E.json`, not here.
-10. **Generator: DBC import assigns one HOH per message** (`CanIf.py:230-235`,
-    `hoh: hth`/`hrh` without increment) - all imported messages of a network
-    share the same HOH, which is what the driver expects for a single hardware
-    filter, but it means imported traffic cannot use several mailboxes without
-    post-editing `GEN/CanIf.json`.
 
 **Related documents:** [CanTp](CanTp.md) - [PduR](PduR.md) - [Com](Com.md) -
 [Dcm](Dcm.md) - [SecOC](SecOC.md) - [Mirror](Mirror.md) - [virtual CAN

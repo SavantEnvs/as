@@ -37,10 +37,8 @@ comments: true
 * **Declaring persistent data as C structs** - `Blocks[]` entries become
   `typedef struct` + a static RAM mirror + default values; the application
   accesses `NvM_GetBlockDataPtrAndLength()` or `NvM_ReadBlock`.
-* **Job queue** - asynchronous Read/Write/Erase/Invalidate/Restore jobs, worked
-  off by `NvM_MainFunction()`.
-* **Bulk services** - `NvM_ReadAll()` after `NvM_FirstInitAll()` at boot,
-  `NvM_WriteAll()` at shutdown.
+* **Job queue** - asynchronous Read/Write jobs, worked off by `NvM_MainFunction()`.
+* **Bulk services** - `NvM_ReadAll()` at boot, `NvM_WriteAll()` at shutdown.
 * **Integrity** - per-block CRC (context CRC) and write-cycle accounting.
 
 ---
@@ -49,11 +47,11 @@ comments: true
 
 | Key | Meaning |
 | --- | --- |
-| `Target` | `Fee` (flash emulation, default) or `Ea` (real EEPROM); overridable with the `NVM_TARGET` environment variable |
+| `Target` | `Fee` (flash emulation, value of the shipped config) or `Ea` (real EEPROM, generator fallback when the key is absent); overridable with the `NVM_TARGET` environment variable |
 | `Blocks[]` | Block table (see below) |
 | `UseContextCrc` | default **true** - emits `FEE_USE_CONTEXT_CRC` |
 | `UseFaults` | default **true** - emits `FEE_USE_FAULTS` (fault injection for tests) |
-| `banks[]` | optional `{address, size, repeat}` flash bank layout for Fee |
+| `Banks[]` | optional `{Address, Size, Repeat}` flash bank layout for Fee |
 
 Block keys:
 
@@ -83,9 +81,9 @@ flowchart LR
     Ea --> Eep["Eep"]
 ```
 
-* **Boot**: `NvM_Init` -> `NvM_FirstInitAll()` (fill RAM with defaults) ->
-  `NvM_ReadAll()` (overwrite with stored data; blocks with CRC errors or blank
-  flash keep defaults).
+* **Boot**: `NvM_Init` -> `NvM_ReadAll()` - each block's RAM mirror is filled from
+  storage; a CRC16 mismatch copies that block's `Rom` defaults instead, any other
+  read error reports `NVM_REQ_NOT_OK` and leaves the mirror untouched.
 * **Runtime**: `NvM_SetRamBlockStatus(block, TRUE)` marks dirty data;
   `NvM_WriteAll()` walks all dirty blocks (or use per-block `NvM_WriteBlock`).
 * **Shutdown**: call `NvM_WriteAll()` and wait for `NvM_GetErrorStatus() !=
@@ -98,13 +96,11 @@ flowchart LR
 | Function | Purpose |
 | --- | --- |
 | `NvM_Init(ConfigPtr)` / `NvM_MainFunction()` | Init, job worker |
-| `NvM_FirstInitAll()` / `NvM_ReadAll()` / `NvM_WriteAll()` / `NvM_ValidateAll()` / `NvM_CancelWriteAll()` | Bulk operations |
+| `NvM_ReadAll()` / `NvM_WriteAll()` | Bulk operations |
 | `NvM_ReadBlock(BlockId, dst)` / `NvM_WriteBlock(BlockId, src)` | Explicit jobs (data is the RAM mirror) |
 | `NvM_SetRamBlockStatus(BlockId, changed)` | Mark dirty |
 | `NvM_GetBlockDataPtrAndLength(BlockId, **ptr, *len)` | Direct RAM access |
 | `NvM_GetErrorStatus(BlockId, *result)` | `NVM_REQ_OK / PENDING / NOT_OK / ...` |
-| `NvM_RestoreBlockDefaults(BlockId, dst)` | Copy defaults |
-| `NvM_EraseNvBlock` / `NvM_InvalidateNvBlock(BlockId)` | Kill stored data |
 | `NvM_JobEndNotification` / `NvM_JobErrorNotification()` | Fee/Ea callbacks |
 | `NvM_GetVersionInfo` | Version |
 
@@ -126,15 +122,17 @@ simulator uses `g_FlsAcMirror` (a RAM mirror of the flash).
 
 ## 6. Key notes and gotchas
 
-1. **Block ids are array indexes** - reordering `Blocks[]` changes every
-   `NvM_BlockIdType` in the code (Dem stores them!).
+1. **Block ids are array indexes offset by 2** - `NVM_BLOCKID_x` starts at 2 and
+   `NvM_ReadBlock()`/`NvM_WriteBlock()` subtract it before indexing `Blocks[]`;
+   reordering `Blocks[]` changes every `NvM_BlockIdType` in the code (Dem stores
+   them!).
 2. **`Repeat` blocks are individual blocks** with their own id and job - writing
    `Dem_NvmEventStatusRecord{}` block 3 touches only that instance.
 3. **`Target` selects the whole lower stack** - `app/app/SConscript` adds `Fls`
    or `Eep` accordingly; switching target changes `NVM_TARGET` or the JSON.
-4. **CRC errors at boot look like "defaults restored"** - check
-   `NvM_GetErrorStatus` for `NVM_REQ_INTEGRITY_FAILED` (via Fee) if stored data
-   vanishes.
+4. **A CRC16 mismatch at boot silently restores the block's `Rom` defaults** -
+   `NvM_GetErrorStatus` reports `NVM_REQ_INTEGRITY_FAILED`; a Fee/Ea read error
+   reports `NVM_REQ_NOT_OK` and leaves the RAM mirror untouched.
 5. **Jobs are asynchronous** - never spin-wait inside a Dcm handler; use
    `NVM_REQ_PENDING` checks across main-function cycles.
 
@@ -144,8 +142,12 @@ simulator uses `g_FlsAcMirror` (a RAM mirror of the flash).
 
 1. **No dataset (REDUNDANT/DATASET) block types** - every block is native.
 2. **No per-block job priority** - the queue is FIFO.
-3. **`NumberOfWriteCycles` is informational** - no wear-level enforcement at NvM
-   level (Fee handles the physical wear).
+3. **Erase / invalidate / validate / restore-defaults are declared only** -
+   `NvM_RestoreBlockDefaults()`, `NvM_EraseNvBlock()`, `NvM_InvalidateNvBlock()`,
+   `NvM_ValidateAll()`, `NvM_CancelWriteAll()` and `NvM_FirstInitAll()` are part
+   of the API in `NvM.h` but have no implementation in `NvM.c`, so calling them
+   fails at link time. Stored data is only written through `NvM_WriteBlock()` /
+   `NvM_WriteAll()`.
 4. **No explicit-sync or write-protection APIs** of full AUTOSAR NvM
    (`NvM_SetBlockProtection` etc. are absent).
 5. **`NVM_TARGET` env var overrides the JSON `Target` silently** - a stale shell

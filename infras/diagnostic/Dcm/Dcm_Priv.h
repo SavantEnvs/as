@@ -655,6 +655,30 @@ Dem_DspReportMirrorMemoryDTCExtendedDataRecordByDTCNumber(Dcm_MsgContextType *ms
                                                           Dcm_NegativeResponseCodeType *nrc);
 Std_ReturnType Dem_DspReportSupportedDTC(Dcm_MsgContextType *msgContext,
                                          Dcm_NegativeResponseCodeType *nrc);
+/* optional 0x19 sub functions, implemented in Dcm_Dsp.c, selected by the
+ * Dcm.json "ReadDtcSubFunctions"/"Functions" list of the service 0x19 */
+Std_ReturnType Dem_DspReportNumberOfDTCBySeverityMaskRecord(Dcm_MsgContextType *msgContext,
+                                                            Dcm_NegativeResponseCodeType *nrc);
+Std_ReturnType Dem_DspReportDTCBySeverityMaskRecord(Dcm_MsgContextType *msgContext,
+                                                    Dcm_NegativeResponseCodeType *nrc);
+Std_ReturnType Dem_DspReportSeverityInformationOfDTC(Dcm_MsgContextType *msgContext,
+                                                     Dcm_NegativeResponseCodeType *nrc);
+Std_ReturnType Dem_DspReportFirstTestFailedDTC(Dcm_MsgContextType *msgContext,
+                                               Dcm_NegativeResponseCodeType *nrc);
+Std_ReturnType Dem_DspReportFirstConfirmedDTC(Dcm_MsgContextType *msgContext,
+                                              Dcm_NegativeResponseCodeType *nrc);
+Std_ReturnType Dem_DspReportMostRecentTestFailedDTC(Dcm_MsgContextType *msgContext,
+                                                    Dcm_NegativeResponseCodeType *nrc);
+Std_ReturnType Dem_DspReportMostRecentConfirmedDTC(Dcm_MsgContextType *msgContext,
+                                                   Dcm_NegativeResponseCodeType *nrc);
+Std_ReturnType Dem_DspReportDTCFaultDetectionCounter(Dcm_MsgContextType *msgContext,
+                                                     Dcm_NegativeResponseCodeType *nrc);
+Std_ReturnType Dem_DspReportUserDefMemoryDTCByStatusMask(Dcm_MsgContextType *msgContext,
+                                                         Dcm_NegativeResponseCodeType *nrc);
+Std_ReturnType Dem_DspReportUserDefMemoryDTCSnapshotRecordByDTCNumber(
+  Dcm_MsgContextType *msgContext, Dcm_NegativeResponseCodeType *nrc);
+Std_ReturnType Dem_DspReportUserDefMemoryDTCExtendedDataRecordByDTCNumber(
+  Dcm_MsgContextType *msgContext, Dcm_NegativeResponseCodeType *nrc);
 Std_ReturnType Dcm_DspIOControlByIdentifier(Dcm_MsgContextType *msgContext,
                                             Dcm_NegativeResponseCodeType *nrc);
 void Dcm_DslInit(void);

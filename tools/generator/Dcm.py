@@ -1287,9 +1287,6 @@ def process_services(cfg, services):
         memorys = []
         for x in cfg["Matrixs"]["Memory"]:
             access, sessions, securities = get_acs(x)
-            access = []
-            sessions = []
-            securities = []
             mem = {
                 "Name": x["Memory.Name"],
                 "Low": x["Address.Low"],

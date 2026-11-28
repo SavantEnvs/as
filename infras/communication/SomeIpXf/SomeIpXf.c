@@ -84,6 +84,7 @@ static int32_t SomeIpXf_DecodeLength(const uint8_t *buffer, uint8_t sizeOfStruct
     *length = ((uint32_t)buffer[0] << 24) + ((uint32_t)buffer[1] << 16) +
               ((uint32_t)buffer[2] << 8) + buffer[3];
   } else {
+    *length = 0;
   }
 
   return sizeOfStructLengthField;
@@ -518,9 +519,9 @@ int32_t SomeIpXf_DecodeStruct(const uint8_t *buffer, uint32_t bufferSize, void *
   boolean hasTag = (SOMEIPXF_TAG_NOT_USED != structDef->DataElements[0].Tag);
   uint8_t sizeOfDataLengthField = 0;
 
-  offset += SomeIpXf_DecodeLength(buffer, structDef->SizeOfStructLengthField, &structSize);
+    offset += SomeIpXf_DecodeLength(buffer, structDef->SizeOfStructLengthField, &structSize);
   if (structSize > bufferSize) {
-    r = -E_NO_DATA;
+      r = -E_NO_DATA;
   } else if (0 == structSize) {
     structSize = bufferSize;
   } else {
@@ -543,7 +544,7 @@ int32_t SomeIpXf_DecodeStruct(const uint8_t *buffer, uint32_t bufferSize, void *
               (i < structDef->NumOfDataElements) && (r >= 0);) {
     sizeOfDataLengthField = 0;
     if (hasTag) {
-      tag = ((uint32_t)buffer[offset + 0] << 8) + buffer[offset + 1];
+            tag = ((uint32_t)buffer[offset + 0] << 8) + buffer[offset + 1];
       offset += 2;
       dataElement = NULL;
       for (i = 0; i < structDef->NumOfDataElements; i++) {
@@ -570,7 +571,7 @@ int32_t SomeIpXf_DecodeStruct(const uint8_t *buffer, uint32_t bufferSize, void *
         } else if ((tag & 0xF000) == 0x7000) {
           offset += 4 + SomeIpXf_DecodeLength(buffer + offset, 4, &dataSize);
           offset += (int32_t)dataSize;
-        } else {
+          } else {
           r = -E_SER_MALFORMED_MESSAGE;
         }
         ASLOG(SOMEIPXF, ("skip data with tag=%X as not found\n", tag));

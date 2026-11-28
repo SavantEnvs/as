@@ -31,7 +31,7 @@ comments: true
 6. [构建与运行示例](#6-构建与运行示例)
 7. [关键注意事项](#7-关键注意事项)
 8. [问题排查](#8-问题排查)
-9. [已知限制与代码评审发现](#9-已知限制与代码评审发现)
+9. [已知限制](#9-已知限制)
 10. [相关文档](#10-相关文档)
 
 ---
@@ -98,7 +98,7 @@ flowchart LR
 另有两个标量键：`PacketPoolSize`（默认 `8`，宏 `XCP_PACKET_POOL_SIZE`，
 `#ifndef` 可覆盖）与 `MainFunctionPeriod`（默认 `10` ms）。注意
 `UsePostBuildConfig` 在本模块默认为 **true**（其他模块默认 false），但生成的
-`XCP_USE_PB_CONFIG` 宏 `Xcp.c` 从不读取——见第 9 节。
+`XCP_USE_PB_CONFIG` 宏 `Xcp.c` 从不读取。
 
 ### 3.1 事件通道
 
@@ -246,7 +246,7 @@ sequenceDiagram
 `Xcp_Init` 由 EcuM 调用（`EcuM_DriverInitListOne`）；`Xcp_MainFunction` 与
 `Xcp_MainFunction_Write` 位于 EcuM 主函数表（`EcuM_Cfg.c`，`USE_XCP` 守卫）。
 全模块单线程；唯一的 ISR 入口是 `Xcp_CanIfRxIndication`（临界区内仅做拷贝
-入池）——但注意池耗尽时它会在 ISR 里直接发 `Xcp_TxError`（见第 9 节）。
+入池）——但注意池耗尽时它会在 ISR 里直接发 `Xcp_TxError`。
 
 ---
 
@@ -353,9 +353,7 @@ COMM_MODE_BASIC、`08` MAX_CTO、`00 08` MAX_DTO、`01 01` 协议/传输层版�
 
 ---
 
-## 9. 已知限制与代码评审发现
-
-### 9.1 功能限制
+## 9. 已知限制
 
 * **仅支持 CAN 传输。** `XCP_ON_FLEXRAY_CHL` / `XCP_ON_ETHERNET_CHL` 已声明
   但未实现；没有 XCP-on-Ethernet/TCP。
@@ -365,23 +363,6 @@ COMM_MODE_BASIC、`08` MAX_CTO、`00 08` MAX_DTO、`01 01` 协议/传输层版�
 * **单连接。** `activeChannel` 概念存在，但 CAN 只有通道 0。
 * **主机版 MTA 是桩**（`Xcp_Mta.c`），`linux`/`_WIN32` 上测量返回残留数据；
   刷写需要按目标定制 `Xcp_DspPgm.c` 集成。
-
-### 9.2 代码评审发现
-
-| # | 位置 | 发现 |
-| --- | --- | --- |
-| 1 | `Xcp.c:345-366` | `Xcp_RxIndication` 出错时**直接**调用 `Xcp_TxError(channel, nrc)`——而它运行在 CanIf RX 上下文（可能是 ISR）。`Xcp_TxError` 会分配池包（`mp_alloc`，有保护）并调用 `CanIf_Transmit`，即错误响应从中断上下文发送；对不允许 ISR 中发送的驱动这是一个潜在竞态。 |
-| 2 | `Xcp.c:33-53` | `Xcp_FindService` 先计算 `h = numOfServices - 1` 并解引用 `config->services[0]`，没有任何空表检查；不带 `Services[]` 的 `Xcp.json` 会导致下溢与越界读（与 `LinIf_HeaderIndication` 同一模式）。 |
-| 3 | `Xcp.c:160-166` | 某服务仍处 `PENDING` 时来了**另一条**命令，代码打 "Fatal memory error"、中止挂起服务并开始新命令。对可能长时间挂起的 `Program*` 序列，交错的命令会静默破坏编程会话，而不是应答 `CMD_BUSY`。 |
-| 4 | `Xcp.c:210-231` | `Xcp_MainFunction_Response` 没有超时/队列深度控制：若 `CanIf_Transmit` 永不成功（总线关闭），TX 包持续累积直至池耗尽，进而连带阻塞 RX 命令（`no free packet`）。 |
-| 5 | `Xcp.c:419-421` | `Xcp_MainFunction_Write`（DAQ 写）与 `Xcp_MainFunction_Daq`（采样）被拆成两个入口，但 `EcuM_Cfg.c:176` 中两者都在同一张主函数表——拆分没有带来并行性，只是一个命名陷阱。 |
-| 6 | `Xcp_Priv.h:102-103` | `XCP_PATCKET_MAX_SIZE`——宏名把 "PACKET" 拼成了 "PATCKET"，并扩散到所有 DSP 文件；重命名只是外观问题，但 grep 的集成者一定会被绊一下。 |
-| 7 | `Xcp.py:340` | `UsePostBuildConfig` 默认 **true**（其他模块默认 false），而生成的 `XCP_USE_PB_CONFIG` 宏从未被 `Xcp.c` 引用（`Xcp_Init` 无条件忽略 `ConfigPtr`）。误导性的死配置。 |
-| 8 | `Xcp.py:299-316` | `preprocess()` 原地排序 `cfg["services"]`；JSON 本身不回写，因此 `GEN/Xcp_Cfg.c` 的顺序与 JSON 顺序不同——对比生成产物时会意外。 |
-| 9 | `Xcp_DspDaq.c`（888 行） | DAQ 的每列表状态是普通 RAM 结构，无校验和保护；主站通过 `WriteDAQ` 可把 ODT 条目指向任意地址，采样时每周期读取——对标定工具这是设计使然，但与 `App_CompareKey` 一起纳入安全评审时值得注意。 |
-| 10 | `Xcp.c:124-207` | `resData[XCP_PATCKET_MAX_SIZE]` 是 8 字节栈缓冲，`resMaxDataLen = 7`；任何 DSP 函数写更长响应都没有超出 `resMaxDataLen` 约定之外的溢出检测——新增 DSP 命令若不遵守约定会静默栈溢出。 |
-
----
 
 ## 10. 相关文档
 

@@ -135,9 +135,11 @@ def Gen_Csm(cfg, dir):
         BitLen = len(mg["Key"]) * 8
         ks = "_".join([Family, Mode, str(BitLen)])
         if ks not in MGL:
+            MGL.append(ks)
             GenMacGenPrimitive(C, Family, Mode, BitLen)
     C.write("/* ================================ [ DATAS     ] ============================================== */\n")
     for mg in cfg.get("MacGen", []):
+        BitLen = len(mg["Key"]) * 8
         C.write("static mbedtls_cipher_context_t Csm_MacGen_%s_Context;\n" % (mg["Name"]))
         C.write("static const uint8_t Csm_MacGen_%s_Key[] = {%s};\n" % (mg["Name"], ",".join(mg["Key"])))
         if mg.get("Verify", False):

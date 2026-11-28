@@ -28,7 +28,7 @@ comments: true
 6. [Build and run](#6-build-and-run)
 7. [Key notes and gotchas](#7-key-notes-and-gotchas)
 8. [Troubleshooting](#8-troubleshooting)
-9. [Known limitations and code review findings](#9-known-limitations-and-code-review-findings)
+9. [Known limitations](#9-known-limitations)
 10. [Related documents](#10-related-documents)
 
 ## 1. Protocol basics
@@ -471,28 +471,13 @@ For a bootloader variant of the same stack see [BL-DoIP.md](BL-DoIP.md) (host) a
 | Large UDS response never arrives (small ones fine) | response larger than one `Net_Mem` block needs the continuation path — see limitation 9.1 |
 | Link error `DoIP_<name>_RoutingActivationAuthenticationCallback` undefined | every routine in `Routines[]` needs both callbacks implemented in the app |
 
-## 9. Known limitations and code review findings
+## 9. Known limitations
 
 Functional limitations:
 
 * Only one DoIP entity/instance (single config, single UDP socket); `DoIP_ActivationLineSwitch` accepts only `InterfaceId == 0`.
 * Routing activation authentication is all-or-nothing per activation type — no per-message security; use SecOC/TLS for that.
 * Vehicle announcement always re-announces the full VIN/EID/GID; VIN/GID management (0x0008-0x0011 sync) is not implemented.
-
-Code review findings (as of v4.0.5, `infras/communication/DoIP/DoIP.c`):
-
-| # | Location | Finding |
-| --- | --- | --- |
-| 1 | DoIP.c:1011 | `doipHandleDiagMsgResponse()` assigns `connection` at the top of the loop body, so both the outer (`NULL == connection`) and inner loop conditions are already false — the function can never find a node in `DOIP_MSG_TX` state and is effectively dead code. Consequence: a UDS response larger than one `Net_Mem` block (continuation started by `DoIP_TpTransmit`, state `DOIP_MSG_TX`) is never completed — the response hangs |
-| 2 | DoIP.c:849 | `doipHandleAliveCheckResponse()` dereferences `connection->context->TesterRef->TesterSA` without a NULL check; `TesterRef` is only set after a successful routing activation, so an unsolicited `0x0008` on a fresh connection causes a NULL-pointer crash |
-| 3 | DoIP.c:501 | routing activation accepts `payloadLength` 7 (no OEM), but `memcpy(..., &msg->req[7], 4)` unconditionally reads 4 bytes past the 7-byte payload (out-of-bounds read into `ramgr.OEM`) |
-| 4 | DoIP.c:733/810 | `sa`/`ta` are only assigned in the `DOIP_MSG_IDLE` branch; a 0x8003 negative ACK emitted from the TP continuation path uses uninitialized values |
-| 5 | DoIp.py:214 | `LogicalAddress` is hardcoded `0xdead` in the generated config instead of being derived from the configured targets |
-| 6 | DoIP.c:265-280 | `doipFindRoutingActivation()` does not break at the first match; if two routines share the same `Number`, the last one silently wins |
-| 7 | DoIP.c:800-803 | the positive ACK response is built twice (inline fill then `doipReplyDiagMsg()` overwrites it) — redundant but harmless |
-| 8 | DoIP.c:1276 | `DoIP_SoAdIfRxIndication()` always replies on `UdpConnections[0]` (acknowledged by a comment) — correct for today's single-UDP-socket design only |
-| 9 | DoIP.c:1065 | `DoIP_Init()` ignores its `ConfigPtr` argument and uses the global `DoIP_Config` |
-| 10 | DoIP.c:73 | the header check only accepts version `0x02`; ISO 13400 also defines `0x03` and the `0x0E..0x0F` range for UDP discovery messages — a tester using those gets a header NACK |
 
 ## 10. Related documents
 

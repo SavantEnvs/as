@@ -896,7 +896,7 @@ static void Mirror_MainFunctionDestCan(NetworkHandleType network) {
     }
   }
 
-  if ((PduInfo.SduLength > 0) && (FALSE != bStatusFrame)) {
+  if ((PduInfo.SduLength > 0) && (FALSE == bStatusFrame)) {
     while (offset < PduInfo.SduLength) {
       doSz = PduInfo.SduLength - offset;
       if (doSz > 8) {
@@ -982,7 +982,7 @@ static void Mirror_MainFunctionDestIp(NetworkHandleType network) {
 void Mirror_Init(const Mirror_ConfigType *configPtr) {
   NetworkHandleType network;
 #ifdef MIRROR_USE_PB_CONFIG
-  if (NULL != CfgPtr) {
+  if (NULL != configPtr) {
     MIRROR_CONFIG = configPtr;
   } else {
     MIRROR_CONFIG = &Mirror_Config;
@@ -1133,8 +1133,8 @@ NetworkHandleType Mirror_GetNetworkHandle(Mirror_NetworkType networkType, uint8_
   NetworkHandleType i;
   DET_VALIDATE(NULL != MIRROR_CONFIG, 0x26, MIRROR_E_UNINIT, return E_NOT_OK);
   for (i = 0; i < MIRROR_CONFIG->SizeOfComChannelMaps; i++) {
-    if ((MIRROR_CONFIG->ComChannelMaps[network].NetworkType == networkType) &&
-        (MIRROR_CONFIG->ComChannelMaps[network].NetworkId == networkId)) {
+    if ((MIRROR_CONFIG->ComChannelMaps[i].NetworkType == networkType) &&
+        (MIRROR_CONFIG->ComChannelMaps[i].NetworkId == networkId)) {
       network = i;
       break;
     }

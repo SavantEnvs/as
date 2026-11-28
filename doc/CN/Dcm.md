@@ -29,7 +29,6 @@ comments: true
 6. [构建与运行演示](#6-构建与运行演示)
 7. [关键注意事项](#7-关键注意事项)
 8. [故障排查](#8-故障排查)
-9. [已知局限](#9-已知局限)
 
 ---
 
@@ -41,8 +40,10 @@ comments: true
   `DelayTime` ms。
 * **数据服务** - 读 DID（0x22）、写 DID（0x2E）、读 Scaling DID（0x24）、周期 DID
   （0x2A）、动态定义 DID（0x2C）、IO 控制（0x2F）。
-* **内存服务** - 读内存（0x23）、写内存（0x3D）、请求下载（0x34）/传输数据
-  （0x36）/退出传输（0x37），带按区间的 `Sessions`/`Securities`/`Attr` 校验。
+* **内存服务** - 读内存（0x23）、写内存（0x3D）带按区间的
+  `Sessions`/`Securities`/`Attr` 校验；请求下载（0x34）/传输数据（0x36）/退出
+  传输（0x37）的地址与权限检查**委托给应用回调**（`ProcessRequestDownloadFnc`
+  等）。
 * **例程控制（0x31）** - 每个例程 start/stop/result 回调。
 * **ECU 复位（0x11）**、Tester Present（0x3E）、通信控制（0x28）、清/读 DTC
   （0x14/0x19，转发给 [Dem](Dem.md)）、身份认证（0x29，需 `USE_CRYPTO`）。
@@ -93,7 +94,7 @@ flowchart LR
 | `Securities[]` | 必填 | 安全级别表 |
 | `Services[]` | 必填 | 服务表（见 3.3） |
 | `Memories[]` | 可选 | 0x23/0x3D/0x34/0x36/0x37 的内存区间 |
-| `memory.format` | `[0x44]` | 允许的 AddressAndLengthFormatIdentifier；`0x44` = 4 字节地址 + 4 字节长度 |
+| `MemoryFormat[]` | `[68]` | 允许的 AddressAndLengthFormatIdentifier（`0x44` = 4 字节地址 + 4 字节长度）；省略该键或空列表则不做格式检查，Excel 导入路径固定写 `[0x44]` |
 
 ### 3.2 `Timings`
 
@@ -131,7 +132,7 @@ flowchart LR
 | `Sessions` | 允许的会话；空 = 全部 |
 | `Securities` | 需要的安全级别；空 = 不需要 |
 | `API` | 服务级权限回调，如 0x10 的 `App_GetSessionChangePermission` |
-| `Delay` | ms；该服务再次被请求的最小间隔（0x11：复位延时） |
+| `Delay` | ms；**仅 0x11 使用** - 实际执行复位前的延时（默认 100）。其他服务忽略该键 |
 | `Functions[]` | 子功能表，含每个子功能的 `API`（0x28）或预定义子功能（0x29） |
 | `DIDs[]` | 0x22/0x2E/0x24/0x2A 的 DID 表 |
 | `Routines[]` | 0x31 的例程表 |
@@ -174,9 +175,11 @@ ShortTermAdjustment）。
 | `Access` | `"physical"` / `"functional"` |
 | `Sessions`, `Securities` | 该区间的权限覆盖 |
 
-每个 0x23/0x3D/0x34 请求都经 `Dcm_DspIsMemoryValid()` 运行时校验：格式 id 必须在
-`memory.format` 中，地址必须完整落在属性匹配的区间内，且区间的会话/安全条件
-满足。
+每个 0x23/0x3D 请求都经 `Dcm_DspIsMemoryValid()` 运行时校验：格式 id 必须在
+`MemoryFormat` 中，地址必须完整落在属性匹配的区间内，且区间的会话/安全条件
+满足。**0x34/0x36/0x37 不经过这个检查** - 区间与权限校验取决于应用在
+`ProcessRequestDownloadFnc` / `ProcessTransferData*` /
+`ProcessRequestTransferExitFnc` 里自己做什么。
 
 ---
 
@@ -202,8 +205,11 @@ sequenceDiagram
   （`DCM_E_PENDING`），Dcm 发 0x78，死线延长到 `P2StarServerMax`。
 * **S3 超时**：`S3Server` ms 内无请求则回退 Default 会话，所有已解锁的安全级别
   一并失效。
-* **安全锁定**：`NumAtt` 次错误 key 后，该级别返回 NRC 0x36/0x37（超过尝试次数 /
-  需要延时），直到 `DelayTime` 结束。
+* **安全锁定**：行为取决于 `SeedProtection`（默认 **true**）。开启时**错误的
+  key 不计数** - 错 key 永远返回 NRC 0x35，级别保持未解锁；计数的是**请求
+  seed 的次数**：第 `NumAtt + 1` 次 requestSeed 之后该级别返回 NRC 0x36，之后
+  一直是 NRC 0x37 直到 ECU 复位。`SeedProtection: false` 时才是经典规则：
+  `NumAtt` 次错误 key 锁定该级别 `DelayTime` ms（NRC 0x36/0x37）。
 * **双通道**：功能寻址请求（P2A）仅当服务允许 `functional` 时才响应；响应走
   物理通道返回。
 * **`Dcm_MainFunction()`** 驱动 DSL 定时器和挂起响应状态机；
@@ -217,7 +223,7 @@ sequenceDiagram
 | --- | --- | --- |
 | `Dcm_Init(ConfigPtr)` / `Dcm_MainFunction()` | EcuM / 调度器 | 初始化，定时器 + 挂起响应处理 |
 | `Dcm_StartOfReception` / `Dcm_CopyRxData` / `Dcm_TpRxIndication` | PduR | TP 接收链 |
-| `Dcm_CopyTxData` / `Dcm_TpTxConfirmation` / `Dcm_TxConfirmation` | PduR | TP 发送链 |
+| `Dcm_CopyTxData` / `Dcm_TpTxConfirmation` / `Dcm_TxConfirmation` | PduR | TP 发送链（`Dcm_TxConfirmation` 是 @SWS_Dcm_01092 入口，内部转发给 `Dcm_TpTxConfirmation`） |
 | `Dcm_GetSecurityLevel` / `Dcm_SetSecurityLevel` | 应用 / 引导程序 | 查询或强制安全级别 |
 | `Dcm_GetSesCtrlType` / `Dcm_SetSesCtrlType` / `Dcm_ResetToDefaultSession` | 应用 / 引导程序 | 查询或强制会话 |
 | `Dcm_SessionChangeIndication` | DSL 内部 | 会话切换钩子 |
@@ -251,8 +257,12 @@ scons --app=CanApp
 
 * `22 F1 5B` 返回 `62 F1 5B` + 10 字节指纹（来自 `App_ReadFingerPrint()`）。
 * `10 03` 回 `50 03 ...`，带配置的 P2/P2* 值。
-* 发 key 之前再发一次 `27 01`，返回**同一个**缓存 seed（seed 保护）。
-* 三次错误 key 后 level 1 锁定 3 秒 - 之后 `27 xx` 得到 NRC 0x36/0x37。
+* 发 key 之前再发一次 `27 01`，返回**同一个**缓存 seed（seed 保护）- 同时计入
+  锁定：第 4 次 `27 01` 返回 NRC 0x36，之后返回 NRC 0x37（默认
+  `SeedProtection: true`）。
+* 默认配置下（`SeedProtection: true`）错误 key **不计数**：错 key 得到
+  NRC 0x35，级别不锁定。想要经典的三次锁定（NRC 0x36/0x37）请设
+  `SeedProtection: false`。
 
 ---
 
@@ -283,36 +293,14 @@ scons --app=CanApp
 | NRC 0x11（服务不支持） | `Services[]` 缺该服务或 `Id` 打错 | `GEN/Dcm_Cfg.c` 服务表 |
 | NRC 0x12（子功能不支持） | 缺 `Functions[]` 条目 | 服务 JSON |
 | NRC 0x22 / 0x7F（条件不满足/被拒绝） | `App_GetSessionChangePermission` 或服务 `API` 返回 E_NOT_OK | 你的回调 |
-| 0x23 出 NRC 0x31（超范围） | 地址不在 `Memories[]`、`Attr` 不符，或格式 id 不在 `memory.format` | `Dcm_DspIsMemoryValid` 的输入 |
+| 0x23 出 NRC 0x31（超范围） | 地址不在 `Memories[]`、`Attr` 不符，或格式 id 不在 `MemoryFormat` | `Dcm_DspIsMemoryValid` 的输入 |
 | NRC 0x33（安全拒绝） | 服务要求 `Securities[]` 且级别未解锁 | `27 xx` 状态 |
-| 三次 key 后 NRC 0x36/0x37 | 安全锁定生效中 | 等待 `DelayTime` ms |
+| NRC 0x35 一直出现、不锁定 | `SeedProtection: true`（默认）计的是 seed 请求次数，不是错误 key | `Dcm.json` 的 `Security` 配置块 |
+| `27 xx` 返回 NRC 0x36/0x37 | 开 seed 保护时：自复位以来 requestSeed 超过 `NumAtt + 1` 次 | 等待没用 - 只能复位 ECU，或设 `SeedProtection: false` |
 | 无响应也无 NRC | 处理器返回 `DCM_E_PENDING` 后没有完成 | 挂起状态机、`P2StarServerMax` |
 | DID 读回乱码 | JSON 的 `Size` 小于回调实际写入的长度 | 回调 vs `Size` |
 
 ---
-
-## 9. 已知局限
-
-以下是对 `infras/diagnostic/Dcm/*` 与 `tools/generator/Dcm.py` 的代码审查结论
-（已核实）：
-
-1. **内存区间检查可能整数溢出**（`Dcm_Dsp.c:1882`）：
-   `(memoryAddress + memorySize) <= Mems[i].high` - 地址接近 `0xFFFFFFFF` 时
-   回绕后区间检查被绕过。虽然允许的 `memory.format` 缩小了影响面，但检查本身
-   应写成 `memoryAddress <= high - memorySize`。
-2. **权限键拼写错误被静默接受**：生成器以"空 = 全部允许"为默认读取
-   `Sessions`/`Securities`/`Access`；DID 的 `Sessions` 列表打错不会导致构建失败。
-3. **`security.SeedProtection` 默认为 `true`** - seed 被缓存，重复 `27 xx` 返回
-   同一个 seed；需要每次新 seed 的实现必须显式关闭。
-4. **动态长度 DID 包装器追加 2 字节**（`data[length]`、`data[length+1]`）-
-   上界受 `Dcm_Dsp.c:224` 的 `resMaxDataLen` 约束，但配置的 DID `Size` 必须为
-   响应中的 2 字节长度留出空间。
-5. **0x29 Authentication 生成的若干函数依赖 `USE_CRYPTO` + Csm**，并非所有构建
-   都包含 - 打开服务而无协议栈时会在链接期失败。
-6. **`Dcm_Transmit(buffer, len, functional)` 收裸缓冲**，长度没有对照
-   `buffer.tx` 做检查 - 调用方不得越界。
-7. **生成器：Excel（`ServiceMap`）与 JSON 两条路径需手工同步**，没有从工作簿
-   再生 JSON 的工具。
 
 **相关文档：** [CanTp](CanTp.md) - [PduR](PduR.md) - [Dem](Dem.md) -
 [Com](Com.md) - [can-bootloader](can-bootloader.md)

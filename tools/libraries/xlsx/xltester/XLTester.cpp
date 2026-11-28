@@ -261,6 +261,7 @@ int XLTester::InitIsoTp() {
     m_Params.U.CAN.BlockSize = Xlt_Get(m_DcmCfg, "BlockSize", 8);
     m_Params.U.CAN.STmin = Xlt_Get(m_DcmCfg, "STmin", 0);
     m_FuncAddr = Xlt_Get(m_DcmCfg, "FunctionalRequestAddress", 0x7df);
+    m_InterCaseDelayMs = Xlt_Get(m_DcmCfg, "InterCaseDelay", 0);
     if (m_CanBusId >= 0) {
       CanL_Close(m_CanBusId);
       m_CanBusId = -1;
@@ -302,6 +303,10 @@ int XLTester::InitIsoTp() {
     } else {
       XLT_INFO("Dcm created: %s:%s:%d Physical Address = 0x%x, 0x%x\n", protocol.c_str(),
                device.c_str(), port, txid, rxid);
+      /* default 5s: a case which expects no response at all would block the tester that
+       * long, the "ResponseTimeout" of the Config sheet (in ms) can shorten it */
+      uint32_t timeoutUs = 1000u * (uint32_t)Xlt_Get(m_DcmCfg, "ResponseTimeout", 5000);
+      IsoTp_IoCtl(m_IsoTp, ISOTP_IOCTL_SET_TIMEOUT, &timeoutUs, sizeof(timeoutUs));
     }
   }
 
@@ -587,17 +592,46 @@ int XLTester::ExecuteCanCase(TestCase &tstCase) {
   } else {
     tstCase.Result = true;
   }
+  /* a CAN case works on the raw link layer, its response is not consumed through the ISO-TP
+   * channel, so it may still be queued there */
+  m_bNeedFlush = true;
 
   return ret;
+}
+
+void XLTester::FlushResponse() {
+  /* The tester and the ECU are not synchronized: a response which was not consumed by the
+   * previous case (a late negative response, a response which arrived after its case timed
+   * out, or a second response of the same request) would be taken as the answer of the next
+   * request and shift the result of every following case. So drop whatever is still pending
+   * before a new request is sent. The short timeout also gives the ECU some time to get its
+   * request buffer free again, otherwise the next request is rejected with BUFREQ_E_BUSY. */
+  uint32_t timeoutUs = 20000;
+  /* NOTE: the ioctl swaps the value, calling it twice restores the previous timeout */
+  IsoTp_IoCtl(m_IsoTp, ISOTP_IOCTL_SET_TIMEOUT, &timeoutUs, sizeof(timeoutUs));
+  for (int i = 0; i < 32; i++) {
+    int rlen = IsoTp_Receive(m_IsoTp, m_Buffer, sizeof(m_Buffer));
+    if (rlen <= 0) {
+      break;
+    }
+    XLT_DEBUG("drop stale response: %s\n", Xlt_Format(m_Buffer, rlen).c_str());
+  }
+  IsoTp_IoCtl(m_IsoTp, ISOTP_IOCTL_SET_TIMEOUT, &timeoutUs, sizeof(timeoutUs));
 }
 
 int XLTester::UdsRequestService(std::vector<uint8_t> &req, std::vector<uint8_t> &res,
                                 std::string address) {
   int r = 0;
+  int numIgnored = 0;
   res.clear();
   XLT_DEBUG("Dcm request: %s\n", Xlt_Format(req).c_str());
 
   uint32_t funcAddr = m_FuncAddr;
+
+  if (m_bNeedFlush) {
+    FlushResponse();
+    m_bNeedFlush = false;
+  }
 
   if ("Functional" == address) {
     /* switch to functional addressing mode */
@@ -608,26 +642,33 @@ int XLTester::UdsRequestService(std::vector<uint8_t> &req, std::vector<uint8_t> 
   while (0 == r) {
     int rlen = IsoTp_Receive(m_IsoTp, m_Buffer, sizeof(m_Buffer));
     if (rlen > 0) {
+      bool bPositive = ((req[0] | 0x40) == m_Buffer[0]);
+      bool bNegative = ((rlen >= 3) && (0x7F == m_Buffer[0]) && (m_Buffer[1] == req[0]));
       XLT_DEBUG("Dcm response: %s\n", Xlt_Format(m_Buffer, rlen).c_str());
-      if ((req[0] | 0x40) == m_Buffer[0]) {
+      if (!bPositive && !bNegative) {
+        /* not the answer of this request, e.g. a late answer of a previous case */
+        XLT_DEBUG("ignore unrelated response: %s\n", Xlt_Format(m_Buffer, rlen).c_str());
+        if (++numIgnored > 8) {
+          r = -EBADMSG;
+        }
+        continue;
+      }
+      if (bPositive) {
         r = 0;
         for (int i = 0; i < rlen; i++) {
           res.push_back(m_Buffer[i]);
         }
         break;
-      } else {
-        if ((3 == rlen) && (0x7F == m_Buffer[0]) && (m_Buffer[1] == req[0]) &&
-            (0x78 == m_Buffer[2])) {
-          /* response is pending as server is busy */
-          continue;
-        } else {
-          for (int i = 0; i < rlen; i++) {
-            res.push_back(m_Buffer[i]);
-          }
-          r = 0; /* negative response */
-          break;
-        }
       }
+      if ((3 == rlen) && (0x78 == m_Buffer[2])) {
+        /* response is pending as server is busy */
+        continue;
+      }
+      for (int i = 0; i < rlen; i++) {
+        res.push_back(m_Buffer[i]);
+      }
+      r = 0; /* negative response */
+      break;
     } else {
       r = -EIO;
     }
@@ -637,6 +678,10 @@ int XLTester::UdsRequestService(std::vector<uint8_t> &req, std::vector<uint8_t> 
     /* switch back to physical addressing mode */
     IsoTp_IoCtl(m_IsoTp, ISOTP_IOCTL_SET_TX_ID, &funcAddr, sizeof(funcAddr));
   }
+
+  /* no answer was consumed: the ECU may answer late, drop that answer before the next request
+   * so that it is not taken as the response of the next case */
+  m_bNeedFlush = (0 != r);
 
   return r;
 }
@@ -702,10 +747,18 @@ int XLTester::ExecuteUdsCase(TestCase &tstCase) {
       } else {
         auto strArrR = Xlt_StrSplit(tstCase.ActualResponse, ' ');
         auto strArrG = Xlt_StrSplit(tstCase.ExpectedResponse, ' ');
-        if (strArrR.size() != strArrG.size()) {
+        size_t numG = strArrG.size();
+        bool bPrefix = false;
+        /* a trailing "..." means only the leading bytes are checked, the
+         * length of the response body is not fixed, i.e. "62 F1 9C ..." */
+        if ((numG > 0) && ("..." == strArrG[numG - 1])) {
+          bPrefix = true;
+          numG--;
+        }
+        if (bPrefix ? (strArrR.size() < numG) : (strArrR.size() != numG)) {
           ret = EFAULT;
         } else {
-          for (size_t i = 0; i < strArrG.size(); i++) {
+          for (size_t i = 0; i < numG; i++) {
             if (("xx" == strArrG[i]) || ("XX" == strArrG[i])) {
             } else if (strtoul(strArrR[i].c_str(), NULL, 16) !=
                        strtoul(strArrG[i].c_str(), NULL, 16)) {
@@ -715,6 +768,11 @@ int XLTester::ExecuteUdsCase(TestCase &tstCase) {
           }
         }
       }
+    } else if (0 == strncmp(tstCase.ExpectedResponse.c_str(), "lua.", 4)) {
+      /* no response at all: still give the lua matcher a chance so that
+       * "lua.UdsNoResponse" can pass, "lua.UdsAny"/"UdsPositive"/... fail */
+      tstCase.ActualResponse = "(no response)";
+      ret = LuaResponse(std::string(&tstCase.ExpectedResponse.c_str()[4]), res);
     }
   } else {
     XLT_ERROR("  name=\"%s\", request=\"%s\" contains invalid data\n", tstCase.Name.c_str(),
@@ -765,8 +823,9 @@ void XLTester::ThreadMain() {
              (int)tstList.Cases.size());
     for (auto &tstCase : tstList.Cases) {
       (void)ExecuteTestCase(tstCase);
-      if (tstCase.DelayMs > 0) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(tstCase.DelayMs));
+      int gapMs = (tstCase.DelayMs > 0) ? tstCase.DelayMs : m_InterCaseDelayMs;
+      if (gapMs > 0) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(gapMs));
       }
       m_Progress += m_Step;
 

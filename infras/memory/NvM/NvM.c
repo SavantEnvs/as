@@ -578,6 +578,20 @@ static boolean NvM_IsBlockPendingReadWrite(NvM_BlockIdType blockId) {
 
   return r;
 }
+
+static void NvM_SetAllPending(uint16_t *masks) {
+  P2CONST(NvM_ConfigType, AUTOMATIC, NVM_CONST) config = NVM_CONFIG;
+  uint16_t numOfWords = (config->NumOfBlocks + 15u) / 16u;
+  uint16_t i;
+
+  for (i = 0u; i < numOfWords; i++) {
+    masks[i] = 0xFFFFu;
+  }
+  if ((0u != numOfWords) && (0u != (config->NumOfBlocks & 0xFu))) {
+    masks[numOfWords - 1u] = (1u << (config->NumOfBlocks & 0xFu)) - 1u;
+  }
+}
+
 /* ================================ [ FUNCTIONS ] ============================================== */
 void NvM_Init(P2CONST(NvM_ConfigType, AUTOMATIC, NVM_CONST) configPtr) {
   P2CONST(NvM_ConfigType, AUTOMATIC, NVM_CONST) config = NVM_CONFIG;
@@ -608,7 +622,6 @@ void NvM_ReadAll(void) {
   P2CONST(NvM_ConfigType, AUTOMATIC, NVM_CONST) config = NVM_CONFIG;
   NvM_ContextType *context = &NvM_Context;
   Std_ReturnType r = E_NOT_OK;
-  uint16_t i;
 #if NVM_JOB_QUEUE_SIZE > 0
   NvM_JobType *pJob = NULL;
 #endif
@@ -643,11 +656,7 @@ void NvM_ReadAll(void) {
 
   if (E_OK != r) {
     EnterCritical();
-    for (i = 0u; i < (config->NumOfBlocks / 16u); i++) {
-      config->ReadMasks[i] = 0xFFFFu;
-    }
-    config->ReadMasks[((config->NumOfBlocks + 15u) / 16u) - 1u] =
-      (1u << (config->NumOfBlocks & 0xFu)) - 1u;
+    NvM_SetAllPending(config->ReadMasks);
     ExitCritical();
   }
 }
@@ -656,7 +665,6 @@ void NvM_WriteAll(void) {
   P2CONST(NvM_ConfigType, AUTOMATIC, NVM_CONST) config = NVM_CONFIG;
   NvM_ContextType *context = &NvM_Context;
   Std_ReturnType r = E_NOT_OK;
-  uint16_t i;
 #if NVM_JOB_QUEUE_SIZE > 0
   NvM_JobType *pJob = NULL;
 #endif
@@ -692,11 +700,7 @@ void NvM_WriteAll(void) {
 
   if (E_OK != r) {
     EnterCritical();
-    for (i = 0; i < (config->NumOfBlocks / 16u); i++) {
-      config->WriteMasks[i] = 0xFFFFu;
-    }
-    config->WriteMasks[((config->NumOfBlocks + 15u) / 16u) - 1u] =
-      (1u << (config->NumOfBlocks & 0xFu)) - 1u;
+    NvM_SetAllPending(config->WriteMasks);
     ExitCritical();
   }
 }
@@ -791,7 +795,11 @@ Std_ReturnType NvM_WriteBlock(NvM_BlockIdType blockId, const void *NvM_SrcPtr) {
 }
 
 Std_ReturnType NvM_SetRamBlockStatus(NvM_BlockIdType blockId, boolean blockChanged) {
+  P2CONST(NvM_ConfigType, AUTOMATIC, NVM_CONST) config = NVM_CONFIG;
   Std_ReturnType ret = E_OK;
+
+  DET_VALIDATE((blockId >= 2u) && ((blockId - 2u) < config->NumOfBlocks), 0x05,
+               NVM_E_PARAM_BLOCK_ID, return E_NOT_OK);
 
   if (TRUE == blockChanged) {
     ret = NvM_WriteBlock(blockId, NULL);

@@ -106,6 +106,11 @@ class dcm:
                 handler.setFormatter(formatter)
                 logger.addHandler(handler)
             self.logger = logger
+        else:
+            logger = logging.getLogger("UDS")
+            logger.setLevel(logging.CRITICAL)
+            logger.addHandler(logging.NullHandler())
+            self.logger = logger
 
     def reset(self):
         del self.tp

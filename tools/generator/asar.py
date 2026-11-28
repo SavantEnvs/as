@@ -201,7 +201,7 @@ def AnalyzeSwc(workspace, component):
                             port_prototype_ref = ar_variable_iref.port_prototype_ref
                             target_data_prototype_ref = ar_variable_iref.target_data_prototype_ref
                             logger.debug(
-                                f"  Read {data_read.name} from {port_prototype_ref} -> {target_data_prototype_ref}"
+                                f"  Write {data_write.name} from {port_prototype_ref} -> {target_data_prototype_ref}"
                             )
                             if target_data_prototype_ref is not None:
                                 results["IB-DATA-WRITE"][target_data_prototype_ref.value] = RTE.name

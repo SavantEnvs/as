@@ -46,7 +46,7 @@ def Gen_E2E(cfg, dir):
         H.write("\n#define E2E_USE_PROTECT_P05\n")
     for idx, profile in enumerate(cfg.get("ProtectP05", [])):
         H.write("#define E2E_PROTECT_P05_%s %su\n" % (toMacro(profile["Name"]), idx))
-    if len(cfg.get("CheckP44", [])):
+    if len(cfg.get("CheckP05", [])):
         H.write("\n#define E2E_USE_CHECK_P05\n")
     for idx, profile in enumerate(cfg.get("CheckP05", [])):
         H.write("#define E2E_CHECK_P05_%s %su\n" % (toMacro(profile["Name"]), idx))

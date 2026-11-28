@@ -398,6 +398,26 @@ static PduLengthType CanTp_GetDL(PduLengthType len, PduLengthType linkLayerDataL
   } while (0)
 ```
 
+### 4.1 换行符（Line Endings）
+
+**所有文本文件一律使用 LF（`\n`），不使用 CRLF（`\r\n`），也不使用单独的 CR（`\r`）。** 适用范围包括源码、脚本、配置、文档和 JSON——不限于 clang-format 处理的 C/C++ 文件。
+
+为什么：
+
+- 项目在 Linux / 类 Unix 环境下构建与运行，LF 是这些平台的原生换行。CRLF 会让 shell 脚本报 `$'\r': command not found`，也会让 Makefile 和配置解析出现难以定位的问题。
+- git 内部统一以 LF 存储文本。若设置 `core.autocrlf=true`，工作区文件被检出为 CRLF、提交时再转回 LF，`git diff` 里就会出现整文件的"改动"（CRLF/LF 互转），污染提交历史、掩盖真正的逻辑变更。
+- 统一 LF 后，同一文件在 Windows、Linux 与 CI 上字节完全一致，跨平台 diff 干净可读。
+
+Windows 上建议这样配置：
+
+```bash
+git config core.autocrlf input    # 工作区保持 LF，提交时不转换（推荐）
+# 或
+git config core.autocrlf false    # 完全不转换
+```
+
+编辑器同样要设置为保存为 LF（VS Code：`"files.eol": "\n"`）。不要用 `autocrlf=true` 把工作区改写成 CRLF。
+
 ---
 
 ## 5. 预处理
@@ -508,6 +528,6 @@ typedef struct { /* @ECUC_SecOC_00012 */
 
 ---
 
-**版本**：1.6
+**版本**：1.7
 **日期**：2026 年 11 月
 **依据**：SSAS 代码库现状、仓库根目录 `.clang-format`、`tools/format.py`

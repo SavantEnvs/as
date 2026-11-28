@@ -37,9 +37,8 @@ comments: true
 * **用 C 结构体声明持久数据** - `Blocks[]` 条目生成 `typedef struct` + 静态 RAM
   镜像 + 默认值；应用通过 `NvM_GetBlockDataPtrAndLength()` 或 `NvM_ReadBlock`
   访问。
-* **作业队列** - 异步的读/写/擦除/失效/恢复作业，由 `NvM_MainFunction()` 执行。
-* **批量服务** - 开机 `NvM_FirstInitAll()` 后 `NvM_ReadAll()`，关机
-  `NvM_WriteAll()`。
+* **作业队列** - 异步的读/写作业，由 `NvM_MainFunction()` 执行。
+* **批量服务** - 开机 `NvM_ReadAll()`，关机 `NvM_WriteAll()`。
 * **完整性** - 按块 CRC（上下文 CRC）与写次数统计。
 
 ---
@@ -48,11 +47,11 @@ comments: true
 
 | 键 | 含义 |
 | --- | --- |
-| `Target` | `Fee`（Flash 模拟，默认）或 `Ea`（真实 EEPROM）；可用环境变量 `NVM_TARGET` 覆盖 |
+| `Target` | `Fee`（Flash 模拟，出厂配置的取值）或 `Ea`（真实 EEPROM，键缺省时生成器的兜底）；可用环境变量 `NVM_TARGET` 覆盖 |
 | `Blocks[]` | 块表（见下） |
 | `UseContextCrc` | 默认 **true** - 生成 `FEE_USE_CONTEXT_CRC` |
 | `UseFaults` | 默认 **true** - 生成 `FEE_USE_FAULTS`（故障注入，测试用） |
-| `banks[]` | 可选 `{address, size, repeat}`，Fee 的 Flash 分区布局 |
+| `Banks[]` | 可选 `{Address, Size, Repeat}`，Fee 的 Flash 分区布局 |
 
 块键：
 
@@ -82,8 +81,9 @@ flowchart LR
     Ea --> Eep["Eep"]
 ```
 
-* **开机**：`NvM_Init` -> `NvM_FirstInitAll()`（RAM 填默认值）-> `NvM_ReadAll()`
-  （用已存数据覆盖；CRC 错或空 Flash 的块保留默认值）。
+* **开机**：`NvM_Init` -> `NvM_ReadAll()` - 每块的 RAM 镜像从存储读取填充；
+  CRC16 校验失败时该块回填 `Rom` 默认值，其它读失败报告 `NVM_REQ_NOT_OK` 且
+  不动 RAM 镜像。
 * **运行**：`NvM_SetRamBlockStatus(block, TRUE)` 标脏；`NvM_WriteAll()` 遍历所有
   脏块（或按块 `NvM_WriteBlock`）。
 * **关机**：调 `NvM_WriteAll()`，断电前等待每块 `NvM_GetErrorStatus() !=
@@ -96,13 +96,11 @@ flowchart LR
 | 函数 | 用途 |
 | --- | --- |
 | `NvM_Init(ConfigPtr)` / `NvM_MainFunction()` | 初始化、作业执行 |
-| `NvM_FirstInitAll()` / `NvM_ReadAll()` / `NvM_WriteAll()` / `NvM_ValidateAll()` / `NvM_CancelWriteAll()` | 批量操作 |
+| `NvM_ReadAll()` / `NvM_WriteAll()` | 批量操作 |
 | `NvM_ReadBlock(BlockId, dst)` / `NvM_WriteBlock(BlockId, src)` | 显式作业（数据即 RAM 镜像） |
 | `NvM_SetRamBlockStatus(BlockId, changed)` | 标脏 |
 | `NvM_GetBlockDataPtrAndLength(BlockId, **ptr, *len)` | 直接访问 RAM |
 | `NvM_GetErrorStatus(BlockId, *result)` | `NVM_REQ_OK / PENDING / NOT_OK / ...` |
-| `NvM_RestoreBlockDefaults(BlockId, dst)` | 拷贝默认值 |
-| `NvM_EraseNvBlock` / `NvM_InvalidateNvBlock(BlockId)` | 抹掉已存数据 |
 | `NvM_JobEndNotification` / `NvM_JobErrorNotification()` | Fee/Ea 回调 |
 | `NvM_GetVersionInfo` | 版本 |
 
@@ -124,14 +122,16 @@ scons --app=CanApp
 
 ## 6. 关键注意事项
 
-1. **块 id 就是数组下标** - 重排 `Blocks[]` 会改动代码里所有 `NvM_BlockIdType`
-   （Dem 里存着它们！）。
+1. **块 id 是数组下标加 2** - `NVM_BLOCKID_x` 从 2 开始，
+   `NvM_ReadBlock()`/`NvM_WriteBlock()` 索引 `Blocks[]` 前会减 2；重排
+   `Blocks[]` 会改动代码里所有 `NvM_BlockIdType`（Dem 里存着它们！）。
 2. **`Repeat` 块是独立块**，各有自己的 id 和作业 - 写
    `Dem_NvmEventStatusRecord{}` 的第 3 块不影响其它实例。
 3. **`Target` 决定整个下层栈** - `app/app/SConscript` 会相应加入 `Fls` 或 `Eep`；
    切换目标改 `NVM_TARGET` 或 JSON。
-4. **开机时的 CRC 错误表现为"恢复默认值"** - 已存数据消失时查
-   `NvM_GetErrorStatus` 是否为 `NVM_REQ_INTEGRITY_FAILED`（经 Fee）。
+4. **开机时 CRC16 校验失败会静默回填该块的 `Rom` 默认值** -
+   `NvM_GetErrorStatus` 报 `NVM_REQ_INTEGRITY_FAILED`；Fee/Ea 读失败则报
+   `NVM_REQ_NOT_OK`，RAM 镜像保持原样。
 5. **作业是异步的** - 不要在 Dcm 处理器里自旋等待；跨主函数周期检查
    `NVM_REQ_PENDING`。
 
@@ -141,7 +141,11 @@ scons --app=CanApp
 
 1. **没有 dataset（REDUNDANT/DATASET）块类型** - 所有块都是 native。
 2. **作业没有按块优先级** - 队列是 FIFO。
-3. **`NumberOfWriteCycles` 只是信息** - NvM 层不做磨损均衡（物理磨损由 Fee 管）。
+3. **擦除/失效/校验/恢复默认值只有声明** - `NvM_RestoreBlockDefaults()`、
+   `NvM_EraseNvBlock()`、`NvM_InvalidateNvBlock()`、`NvM_ValidateAll()`、
+   `NvM_CancelWriteAll()`、`NvM_FirstInitAll()` 在 `NvM.h` 里有声明，但 `NvM.c`
+   里没有实现，调用会在链接期失败。已存数据只能通过 `NvM_WriteBlock()` /
+   `NvM_WriteAll()` 写入。
 4. **没有完整 AUTOSAR NvM 的显式同步/写保护 API**（没有 `NvM_SetBlockProtection`
    等）。
 5. **`NVM_TARGET` 环境变量会静默覆盖 JSON 的 `Target`** - 一个残留的 shell 变量

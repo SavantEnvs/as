@@ -95,7 +95,7 @@ static Std_ReturnType TLS_ServerInit(const TLS_ServerConfigType *server) {
     psa_status_t status = psa_crypto_init();
     if (status != PSA_SUCCESS) {
       ASLOG(TLSE, ("Failed to initialize PSA Crypto implementation: %d\n", (int)status));
-      ret = E_NOT_OK
+      ret = E_NOT_OK;
     }
   }
 #endif /* MBEDTLS_USE_PSA_CRYPTO */
@@ -262,7 +262,7 @@ static void TLS_ServerHandShake(const TLS_ServerConfigType *server) {
 static void TLS_ServerRecvStart(const TLS_ServerConfigType *server) {
   Std_ReturnType ret = E_NOT_OK;
   int rc;
-  uint8_t *data;
+  uint8_t *data = NULL;
   PduInfoType PduInfo;
   uint32_t rxLen;
   uint32_t length = 0; /* length of left data */
@@ -443,7 +443,7 @@ static Std_ReturnType TLS_ServerTransmit(uint16_t serverIdx, const PduInfoType *
 void TLS_Init(const TLS_ConfigType *config) {
   uint16_t i;
 #ifdef TLS_USE_PB_CONFIG
-  if (NULL != CfgPtr) {
+  if (NULL != config) {
     TLS_CONFIG = config;
   } else {
     TLS_CONFIG = &TLS_Config;

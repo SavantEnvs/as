@@ -27,7 +27,7 @@ def Gen_CanTp(cfg, dir):
     H.write("\n\n")
     H.write("%s#define CANTP_USE_TX_CONFIRMATION\n\n" % ("" if cfg.get("UseTxConfirmation", True) else "// "))
     if "ZeroCost" in cfg:
-        H.write("#define PDUR_%s_LINTP_ZERO_COST\n\n" % (cfg["ZeroCost"].upper()))
+        H.write("#define PDUR_%s_CANTP_ZERO_COST\n\n" % (cfg["ZeroCost"].upper()))
     H.write("/* #define CANTP_USE_STD_TIMER */\n\n")
     H.write("#define CANTP_STMIN_ADJUST %su\n" % (cfg.get("STMinAdjust", 0)))
     H.write("#ifndef CANTP_MAIN_FUNCTION_PERIOD\n")

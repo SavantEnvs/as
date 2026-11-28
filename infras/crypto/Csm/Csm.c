@@ -96,6 +96,7 @@ Std_ReturnType Csm_MacVerify(uint32_t jobId, Crypto_OperationModeType mode, cons
   DET_VALIDATE(NULL != CSM_CONFIG, 0x61, CSM_E_UNINIT, return E_NOT_OK);
   DET_VALIDATE((NULL != dataPtr) && (dataLength > 0), 0x61, CSM_E_PARAM_POINTER, return E_NOT_OK);
   DET_VALIDATE((NULL != macPtr) && (macLength > 0), 0x61, CSM_E_PARAM_POINTER, return E_NOT_OK);
+  DET_VALIDATE(NULL != verifyPtr, 0x61, CSM_E_PARAM_POINTER, return E_NOT_OK);
   DET_VALIDATE(jobId < CSM_CONFIG->NumOfJobs, 0x61, CSM_E_PARAM_HANDLE, return E_NOT_OK);
   jobCfg = &CSM_CONFIG->JobConfigs[jobId];
   DET_VALIDATE(CRYPTO_MAC_GENERATE == jobCfg->ServiceType, 0x61, CSM_E_SERVICE_TYPE,
@@ -120,6 +121,7 @@ Std_ReturnType Csm_MacVerify(uint32_t jobId, Crypto_OperationModeType mode, cons
         ret = E_NOT_OK;
       }
     }
+    *verifyPtr = (E_OK == ret) ? CRYPTO_E_VER_OK : CRYPTO_E_VER_NOT_OK;
     break;
   default:
     DET_VALIDATE(FALSE, 0x61, CSM_E_PARAM_HANDLE, return E_NOT_OK);

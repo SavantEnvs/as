@@ -42,7 +42,7 @@
 #define CRYPTO_OPERATION_MODE_RESTORE_CONTEXT ((Crypto_OperationModeType)0x10)
 
 #define CRYPTO_E_VER_OK ((Crypto_VerifyResultType)0x00)
-#define CRYPTO_E_VER_NOT_OK ((Crypto_VerifyResultType)0x00)
+#define CRYPTO_E_VER_NOT_OK ((Crypto_VerifyResultType)0x01)
 /* ================================ [ TYPES     ] ============================================== */
 /* @SWS_Csm_01047 */
 typedef uint8_t Crypto_AlgorithmFamilyType;
